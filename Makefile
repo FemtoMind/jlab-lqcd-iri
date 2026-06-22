@@ -1,15 +1,19 @@
-PYTHON      := python3.13
+PYTHON      := python3.12
 VENV        := .venv
 BIN         := $(VENV)/bin
 UV          := uv
 PIP         := $(BIN)/pip
-LOG_FILE    := runtime-logs.log
+#LOG_FILE    := runtime-logs.log
+LOG_FILE    := /tmp/runtime-logs.log
 IRI_LOG_FILE ?= $(LOG_FILE)
 LOG_ROTATION_DAYS := 5
 IRI_LOG_ROTATION_DAYS ?= $(LOG_ROTATION_DAYS)
+# Use bash
+SHELL := /bin/bash
 
 STAMP_VENV  := $(VENV)/.created
 STAMP_DEPS  := $(VENV)/.deps
+PROXY_PKGS := /home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/requirements-fastmcp-3.txt
 
 .DEFAULT_GOAL := dev
 
@@ -18,6 +22,7 @@ $(STAMP_VENV):
 	touch $(STAMP_VENV)
 
 .venv: $(STAMP_VENV)
+
 
 $(STAMP_DEPS): $(STAMP_VENV) pyproject.toml
 	$(UV) pip install --python $(BIN)/python -e .
@@ -32,18 +37,40 @@ deps: $(STAMP_DEPS)
 dev: deps
 	@source $(BIN)/activate && \
 	[ -f local.env ] && source local.env || true && \
-	IRI_API_ADAPTER_facility=app.demo_adapter.DemoAdapter \
-	IRI_API_ADAPTER_status=app.demo_adapter.DemoAdapter \
-	IRI_API_ADAPTER_account=app.demo_adapter.DemoAdapter \
-	IRI_API_ADAPTER_compute=app.demo_adapter.DemoAdapter \
-	IRI_API_ADAPTER_filesystem=app.demo_adapter.DemoAdapter \
-	IRI_API_ADAPTER_storage=app.demo_adapter.DemoAdapter \
-	IRI_API_ADAPTER_task=app.demo_adapter.DemoAdapter \
+	IRI_API_ADAPTER_facility=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_status=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_account=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_compute=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_filesystem=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_storage=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_task=app.jlab_lqcd_impl.JlabLQCDImpl \
 	IRI_LOG_FILE="$${IRI_LOG_FILE:-$${LOG_FILE:-$(IRI_LOG_FILE)}}" \
 	IRI_LOG_ROTATION_DAYS="$${IRI_LOG_ROTATION_DAYS:-$${LOG_ROTATION_DAYS:-$(IRI_LOG_ROTATION_DAYS)}}" \
 	DEMO_QUEUE_UPDATE_SECS=2 \
 	OPENTELEMETRY_ENABLED=true \
 	API_URL_ROOT='http://localhost:8000' fastapi dev
+
+# Install LQCD proxy requirements
+PROXY_ENV: 
+	@echo "Installing LQCD proxy requirements from $(PROXY_PKGS)" && \
+	$(UV) pip install --python $(BIN)/python -r $(PROXY_PKGS)
+
+mcp-int-dev: deps PROXY_ENV
+	@source $(BIN)/activate && \
+	[ -f local.env ] && source local.env || true && \
+	IRI_API_ADAPTER_facility=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_status=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_account=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_compute=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_filesystem=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_storage=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_API_ADAPTER_task=app.jlab_lqcd_impl.JlabLQCDImpl \
+	IRI_LOG_FILE="$${IRI_LOG_FILE:-$${LOG_FILE:-$(IRI_LOG_FILE)}}" \
+	IRI_LOG_ROTATION_DAYS="$${IRI_LOG_ROTATION_DAYS:-$${LOG_ROTATION_DAYS:-$(IRI_LOG_ROTATION_DAYS)}}" \
+	DEMO_QUEUE_UPDATE_SECS=2 \
+	OPENTELEMETRY_ENABLED=true \
+	API_URL_ROOT='http://localhost:8000' \
+	python3 /home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_proxy_server.py --port 8000
 
 .PHONY: clean
 clean:
