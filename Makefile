@@ -13,7 +13,8 @@ SHELL := /bin/bash
 
 STAMP_VENV  := $(VENV)/.created
 STAMP_DEPS  := $(VENV)/.deps
-PROXY_PKGS := /home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/requirements-fastmcp-3.txt
+PROXY_DIR   ?= /home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode
+PROXY_PKGS  ?= $(PROXY_DIR)/requirements-fastmcp-3.txt
 
 .DEFAULT_GOAL := dev
 
@@ -37,6 +38,8 @@ deps: $(STAMP_DEPS)
 dev: deps
 	@source $(BIN)/activate && \
 	[ -f local.env ] && source local.env || true && \
+	LQCD_PROXY_DIR=$(PROXY_DIR) \
+	PYTHONPATH=$(PROXY_DIR):$$PYTHONPATH \
 	IRI_API_ADAPTER_facility=app.jlab_lqcd_impl.JlabLQCDImpl \
 	IRI_API_ADAPTER_status=app.jlab_lqcd_impl.JlabLQCDImpl \
 	IRI_API_ADAPTER_account=app.jlab_lqcd_impl.JlabLQCDImpl \
@@ -47,7 +50,10 @@ dev: deps
 	IRI_LOG_FILE="$${IRI_LOG_FILE:-$${LOG_FILE:-$(IRI_LOG_FILE)}}" \
 	IRI_LOG_ROTATION_DAYS="$${IRI_LOG_ROTATION_DAYS:-$${LOG_ROTATION_DAYS:-$(IRI_LOG_ROTATION_DAYS)}}" \
 	DEMO_QUEUE_UPDATE_SECS=2 \
-	OPENTELEMETRY_ENABLED=true \
+	OPENTELEMETRY_ENABLED=false \
+	GLOBUS_RS_ID=1cbc3307-9e6a-4730-a4b5-9e6d8ec37326 \
+	GLOBUS_RS_SECRET=xxxxxxxx (replace with actual secret) \
+	GLOBUS_RS_SCOPE_SUFFIX=iri_api \
 	API_URL_ROOT='http://localhost:8000' fastapi dev
 
 # Install LQCD proxy requirements
@@ -58,6 +64,8 @@ PROXY_ENV:
 mcp-int-dev: deps PROXY_ENV
 	@source $(BIN)/activate && \
 	[ -f local.env ] && source local.env || true && \
+	LQCD_PROXY_DIR=$(PROXY_DIR) \
+	PYTHONPATH=$(PROXY_DIR):$$PYTHONPATH \
 	IRI_API_ADAPTER_facility=app.jlab_lqcd_impl.JlabLQCDImpl \
 	IRI_API_ADAPTER_status=app.jlab_lqcd_impl.JlabLQCDImpl \
 	IRI_API_ADAPTER_account=app.jlab_lqcd_impl.JlabLQCDImpl \
@@ -68,9 +76,12 @@ mcp-int-dev: deps PROXY_ENV
 	IRI_LOG_FILE="$${IRI_LOG_FILE:-$${LOG_FILE:-$(IRI_LOG_FILE)}}" \
 	IRI_LOG_ROTATION_DAYS="$${IRI_LOG_ROTATION_DAYS:-$${LOG_ROTATION_DAYS:-$(IRI_LOG_ROTATION_DAYS)}}" \
 	DEMO_QUEUE_UPDATE_SECS=2 \
-	OPENTELEMETRY_ENABLED=true \
+	OPENTELEMETRY_ENABLED=false \
+	GLOBUS_RS_ID=1cbc3307-9e6a-4730-a4b5-9e6d8ec37326 \
+	GLOBUS_RS_SECRET=xxxxxxxxx (replace with actual secret) \
+	GLOBUS_RS_SCOPE_SUFFIX=iri_api \
 	API_URL_ROOT='http://localhost:8000' \
-	python3 /home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_proxy_server.py --port 8000
+	python3 $(PROXY_DIR)/lqcd_proxy_server.py --port 8000
 
 .PHONY: clean
 clean:
