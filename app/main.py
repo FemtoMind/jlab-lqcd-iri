@@ -2,8 +2,12 @@
 """Main API application"""
 
 import logging
+import warnings
 from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
+
+# Suppress Pydantic-related warnings globally (e.g. deprecated Field parameters)
+warnings.filterwarnings("ignore", module="pydantic")
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -37,7 +41,7 @@ if config.OPENTELEMETRY_ENABLED:
     resource = Resource.create({"service.name": "iri-facility-api", "service.version": config.API_VERSION, "service.endpoint": config.API_URL_ROOT})
 
     if config.OTEL_TRACES_ENABLED:
-        samplerate = "1.0" if config.OPENTELEMETRY_DEBUG else config.OTEL_SAMPLE_RATE
+        samplerate = 1.0 if config.OPENTELEMETRY_DEBUG else config.OTEL_SAMPLE_RATE
         tracer_provider = TracerProvider(resource=resource, sampler=ParentBased(TraceIdRatioBased(samplerate)))
         if config.OTLP_ENDPOINT:
             span_processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=config.OTLP_ENDPOINT, insecure=True))
