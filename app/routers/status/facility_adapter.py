@@ -33,7 +33,7 @@ class FacilityAdapter(ABC):
         pass
 
     @abstractmethod
-    async def get_resource(self: "FacilityAdapter", id_: str) -> status_models.Resource:
+    async def get_resource(self: "FacilityAdapter", id_: str) -> status_models.Resource | None:
         pass
 
     @abstractmethod
@@ -54,7 +54,7 @@ class FacilityAdapter(ABC):
         pass
 
     @abstractmethod
-    async def get_event(self: "FacilityAdapter", id_: str) -> status_models.Event:
+    async def get_event(self: "FacilityAdapter", id_: str) -> status_models.Event | None:
         pass
 
     @abstractmethod
@@ -76,5 +76,5 @@ class FacilityAdapter(ABC):
         pass
 
     @abstractmethod
-    async def get_incident(self: "FacilityAdapter", id_: str) -> status_models.Incident:
+    async def get_incident(self: "FacilityAdapter", id_: str) -> status_models.Incident | None:
         pass
