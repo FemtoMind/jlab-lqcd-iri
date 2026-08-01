@@ -511,7 +511,7 @@ class DemoAdapter(
         sites = self.sites
 
         if name:
-            sites = [s for s in sites if name.lower() in s.name.lower()]  # pylint: disable=no-member
+            sites = [s for s in sites if s.name and name.lower() in s.name.lower()]
 
         if short_name:
             sites = [s for s in sites if s.short_name == short_name]

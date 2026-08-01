@@ -3,6 +3,7 @@ A demo adapter for the IRI Facility API that returns hardcoded data.
 This is useful for testing and development of the API without needing to connect to real resources
 """
 
+from pydantic import HttpUrl
 import base64
 import datetime
 import glob
@@ -46,6 +47,7 @@ from .types.user import User
 from .types.scalars import AllocationUnit
 from .apilogger import get_stream_logger
 from .config import LOG_LEVEL
+from .jlab_lqcd import account, compute
 
 logger = get_stream_logger(__name__, LOG_LEVEL)
 
@@ -189,7 +191,7 @@ class JlabLQCDImpl(
             last_modified=now,
             short_name="JlabLQCD",
             organization_name="Jefferson Lab",
-            support_uri="https://lqcd.jlab.org/lqcd/support",
+            support_uri= HttpUrl("https://lqcd.jlab.org/lqcd/support"),
             site_ids=[site1.id],
         )
 
@@ -535,8 +537,8 @@ class JlabLQCDImpl(
 
         if name:
             sites = [
-                s for s in sites if name.lower() in s.name.lower()
-            ]  # pylint: disable=no-member
+                s for s in sites if s.name and name.lower() in s.name.lower()
+            ]
 
         if short_name:
             sites = [s for s in sites if s.short_name == short_name]
@@ -684,7 +686,7 @@ class JlabLQCDImpl(
             caps = [c for c in caps if c.name == name]
         if modified_since:
             ms = datetime.datetime.fromisoformat(str(modified_since))
-            caps = [c for c in caps if c.last_modified > ms]
+            caps = [c for c in caps if c.last_modified and c.last_modified > ms]
         return paginate_list(caps, offset, limit)
 
     async def get_current_user(
@@ -803,25 +805,21 @@ class JlabLQCDImpl(
     async def get_projects(
         self: "JlabLQCDImpl", user: User
     ) -> list[account_models.Project]:
-        return [p.model_copy(update={"user_ids": [user.id]}) for p in self.projects]
+        return await account.get_projects(self, user)
 
     async def get_project_allocations(
         self: "JlabLQCDImpl",
         project: account_models.Project,
         user: User,
     ) -> list[account_models.ProjectAllocation]:
-        return [pa for pa in self.project_allocations if pa.project_id == project.id]
+        return await account.get_project_allocations(self, project, user)
 
     async def get_user_allocations(
         self: "JlabLQCDImpl",
         user: User,
         project_allocation: account_models.ProjectAllocation,
     ) -> list[account_models.UserAllocation]:
-        return [
-            ua.model_copy(update={"user_id": user.id})
-            for ua in self.user_allocations
-            if ua.project_allocation_id == project_allocation.id
-        ]
+        return await account.get_user_allocations(self, user, project_allocation)
 
     async def submit_job(
         self: "JlabLQCDImpl",
@@ -829,20 +827,7 @@ class JlabLQCDImpl(
         user: User,
         job_spec: compute_models.JobSpec,
     ) -> compute_models.Job:
-        facility_project = get_iri_facility_project()
-        account = facility_project or (
-            job_spec.attributes.account if job_spec.attributes else None
-        )
-        return compute_models.Job(
-            id="job_123",
-            status=compute_models.JobStatus(
-                state=compute_models.JobState.NEW,
-                time=utc_timestamp(),
-                message="job submitted",
-                exit_code=0,
-                meta_data={"account": account},
-            ),
-        )
+        return await compute.submit_job(self, resource, user, job_spec)
 
     async def update_job(
         self: "JlabLQCDImpl",
@@ -851,20 +836,7 @@ class JlabLQCDImpl(
         job_spec: compute_models.JobSpec,
         job_id: str,
     ) -> compute_models.Job:
-        facility_project = get_iri_facility_project()
-        account = facility_project or (
-            job_spec.attributes.account if job_spec.attributes else None
-        )
-        return compute_models.Job(
-            id=job_id,
-            status=compute_models.JobStatus(
-                state=compute_models.JobState.ACTIVE,
-                time=utc_timestamp(),
-                message="job updated",
-                exit_code=0,
-                meta_data={"account": account},
-            ),
-        )
+        return await compute.update_job(self, resource, user, job_spec, job_id)
 
     async def get_job(
         self: "JlabLQCDImpl",
@@ -874,15 +846,8 @@ class JlabLQCDImpl(
         historical: bool = False,
         include_spec: bool = False,
     ) -> compute_models.Job:
-        return compute_models.Job(
-            id=job_id,
-            status=compute_models.JobStatus(
-                state=compute_models.JobState.COMPLETED,
-                time=utc_timestamp(),
-                message="job completed successfully",
-                exit_code=0,
-                meta_data={"account": "account1"},
-            ),
+        return await compute.get_job(
+            self, resource, user, job_id, historical, include_spec
         )
 
     async def get_jobs(
@@ -895,19 +860,16 @@ class JlabLQCDImpl(
         historical: bool = False,
         include_spec: bool = False,
     ) -> list[compute_models.Job]:
-        return [
-            compute_models.Job(
-                id=f"job_{i}",
-                status=compute_models.JobStatus(
-                    state=random.choice([s for s in compute_models.JobState]),
-                    time=utc_timestamp() - int(random.random() * 100),
-                    message="",
-                    exit_code=random.choice([0, 0, 0, 0, 0, 1, 1, 128, 127]),
-                    meta_data={"account": "account1"},
-                ),
-            )
-            for i in range(random.randint(3, 10))
-        ]
+        return await compute.get_jobs(
+            self,
+            resource,
+            user,
+            offset,
+            limit,
+            filters,
+            historical,
+            include_spec,
+        )
 
     async def cancel_job(
         self: "JlabLQCDImpl",
@@ -915,8 +877,7 @@ class JlabLQCDImpl(
         user: User,
         job_id: str,
     ) -> bool:
-        # call slurm/etc. to cancel job
-        return True
+        return await compute.cancel_job(self, resource, user, job_id)
 
     # ----------------------------------------------
     # Storage API

@@ -46,7 +46,7 @@ class Facility(NamedObject):
 
     short_name: str|None = Field(default=None, description="Common or short name of the Facility.", example="ESnet")
     organization_name: str|None = Field(default=None, description="Operating organization's name.", example="Energy Sciences Network")
-    support_uri: HttpUrl|None = Field(default=None, description="Link to facility support portal.", example="https://support.es.net")
+    support_uri: HttpUrl|str|None = Field(default=None, description="Link to facility support portal.", example="https://support.es.net")
     site_ids: list[str] = Field(default_factory=list, exclude=True)
 
     @computed_field(description="URIs of associated Sites.")
