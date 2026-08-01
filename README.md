@@ -1,5 +1,5 @@
 # <img src="https://iri.science/images/doe-icon-old.png" height=30 /> IRI API reference implementation in Python 3
-Python reference implementation of the IRI facility API, standardizing endpoints, parameters, and return values across DOE computational facilities.
+Python implementation of the IRI facility API for Jlab LQCD, standardizing endpoints, parameters, and return values across DOE computational facilities.
 
 See it live:
 
