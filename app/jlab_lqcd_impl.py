@@ -3,6 +3,8 @@ A demo adapter for the IRI Facility API that returns hardcoded data.
 This is useful for testing and development of the API without needing to connect to real resources
 """
 
+from app.types.scalars import StrictDateTime
+from app.types import scalars
 from pydantic import HttpUrl
 import base64
 import datetime
@@ -47,7 +49,8 @@ from .types.user import User
 from .types.scalars import AllocationUnit
 from .apilogger import get_stream_logger
 from .config import LOG_LEVEL
-from .jlab_lqcd import account, compute
+from .utils import demo_uuid
+from .jlab_lqcd import account, compute, slurm, lqcdweb
 
 logger = get_stream_logger(__name__, LOG_LEVEL)
 
@@ -97,9 +100,7 @@ class PathSandbox:
         return cls._base_temp_dir
 
 
-def demo_uuid(kind: str, name: str) -> str:
-    """Generate a deterministic UUID based on the kind and name."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"demo:{kind}:{name}"))
+
 
 
 def utc_now() -> datetime.datetime:
@@ -202,73 +203,68 @@ class JlabLQCDImpl(
             "cpu": Capability(
                 id=demo_uuid("capability", "cpu"),
                 name="CPU Nodes",
+                description="24s CPU cluster",
                 units=[AllocationUnit.node_hours],
+                last_modified=datetime.datetime(2024, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "gpu": Capability(
                 id=demo_uuid("capability", "gpu"),
                 name="GPU Nodes",
+                description="21g GPU cluster",
                 units=[AllocationUnit.node_hours],
-            ),
-            "jasmine": Capability(
-                id=demo_uuid("capability", "jasmine"),
-                name="JASMINE Tape Storage",
-                units=[AllocationUnit.bytes, AllocationUnit.inodes],
+                last_modified=datetime.datetime(2021, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "cache": Capability(
                 id=demo_uuid("capability", "cache"),
                 name="LUSTRE Cache Storage",
+                description="LUSTRE Cache Storage backed by a tape library",
                 units=[AllocationUnit.bytes],
+                last_modified=datetime.datetime(2025, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "volatile": Capability(
                 id=demo_uuid("capability", "volatile"),
                 name="Lustre Volatile Storage",
+                description="Lustre Volatile Storage cleaned up to 6-month inactive files",
                 units=[AllocationUnit.bytes],
+                last_modified=datetime.datetime(2025, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "workdisk": Capability(
                 id=demo_uuid("capability", "workdisk"),
                 name="NFS Workdisk Storage",
+                description="NFS Workdisk Storage",
                 units=[AllocationUnit.bytes],
+                last_modified=datetime.datetime(2025, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "home": Capability(
                 id=demo_uuid("capability", "home"),
                 name="QCD user home Storage",
+                description="QCD user home Storage for storing source files and small configuration files",
                 units=[AllocationUnit.bytes],
+                last_modified=datetime.datetime(2020, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
         }
 
-        pm = status_models.Resource(
+        jlab_lqcd_cluster = status_models.Resource(
             id=demo_uuid("resource", "jlab-lqcd-nodes"),
             site_id=site1.id,
             group="jlab-lqcd",
-            name="compute nodes",
+            name="Jlab LQCD Cluster",
             description="the Jefferson Lab LQCD compute nodes",
             capability_ids=[
                 self.capabilities["cpu"].id,
                 self.capabilities["gpu"].id,
             ],
-            current_status=status_models.Status.degraded,
-            last_modified=day_ago,
+            current_status=status_models.Status.unknown,
+            last_modified=now,
             resource_type=status_models.ResourceType.compute,
-            supported_endpoints=[status_models.Endpoint.compute],
+            supported_endpoints=[status_models.Endpoint.compute,status_models.Endpoint.filesystem],
         )
 
-        jasmine = status_models.Resource(
-            id=demo_uuid("resource", "jasmine"),
-            site_id=site1.id,
-            group="jasmine",
-            name="jasmine",
-            description="jasmine tape storage",
-            capability_ids=[self.capabilities["jasmine"].id],
-            current_status=status_models.Status.up,
-            last_modified=day_ago,
-            resource_type=status_models.ResourceType.storage,
-            supported_endpoints=[status_models.Endpoint.filesystem],
-        )
 
         cache = status_models.Resource(
             id=demo_uuid("resource", "cache"),
             site_id=site1.id,
-            group="cache",
+            group="jlab-lqcd",
             name="cache",
             description="cache storage",
             capability_ids=[self.capabilities["cache"].id],
@@ -281,7 +277,7 @@ class JlabLQCDImpl(
         workdisk = status_models.Resource(
             id=demo_uuid("resource", "workdisk"),
             site_id=site1.id,
-            group="workdisk",
+            group="jlab-lqcd",
             name="workdisk",
             description="workdisk storage",
             capability_ids=[self.capabilities["workdisk"].id],
@@ -294,7 +290,7 @@ class JlabLQCDImpl(
         volatile = status_models.Resource(
             id=demo_uuid("resource", "volatile"),
             site_id=site1.id,
-            group="volatile",
+            group="jlab-lqcd",
             name="volatile",
             description="volatile storage",
             capability_ids=[self.capabilities["volatile"].id],
@@ -307,7 +303,7 @@ class JlabLQCDImpl(
         home = status_models.Resource(
             id=demo_uuid("resource", "home"),
             site_id=site1.id,
-            group="home",
+            group="jlab-lqcd",
             name="home",
             description="home storage",
             capability_ids=[self.capabilities["home"].id],
@@ -317,20 +313,7 @@ class JlabLQCDImpl(
             supported_endpoints=[status_models.Endpoint.filesystem],
         )
 
-        login = status_models.Resource(
-            id=demo_uuid("resource", "login"),
-            site_id=site1.id,
-            group="login",
-            name="login",
-            description="login nodes",
-            capability_ids=[],
-            current_status=status_models.Status.up,
-            last_modified=day_ago,
-            resource_type=status_models.ResourceType.website,
-            supported_endpoints=[status_models.Endpoint.compute],
-        )
-
-        self.resources = [pm, jasmine, cache, workdisk, volatile, home, login]
+        self.resources = [jlab_lqcd_cluster, cache, workdisk, volatile, home]
 
         _rw = storage_models.AccessPermissions(read=True, write=True, execute=True)
         _ro = storage_models.AccessPermissions(read=True, write=False, execute=True)
@@ -343,7 +326,7 @@ class JlabLQCDImpl(
 
         # Perlmutter compute nodes: in-job semantics. Home is read-only inside a job;
         # archive (HPSS) is not accessible from compute, so it isn't mounted here at all.
-        self.locations[pm.id] = [
+        self.locations[jlab_lqcd_cluster.id] = [
             storage_models.StorageInstance(
                 logical_name=storage_models.LogicalName.home,
                 path="/home/{user}",
@@ -390,24 +373,6 @@ class JlabLQCDImpl(
             ),
         ]
 
-        # HPSS tape system: archive only; user accesses it through this resource_id
-        # (typically via login nodes or htar). Archive is rw from this resource.
-        self.locations[jasmine.id] = [
-            storage_models.StorageInstance(
-                logical_name=storage_models.LogicalName.archive,
-                path="/mss/{project}",
-                access=_ro,
-                filesystem="/mss",
-                performance_tier="tape",
-                quota_bytes=None,
-                available_bytes=None,
-                purge_policy_days=None,
-                shared=False,
-            ),
-        ]
-
-        # Login nodes: same filesystem layout as CFS — outside-of-job semantics for everything.
-        self.locations[login.id] = self.locations[pm.id]
 
         # Populate site resource_ids based on which resources are at each site
         site1.resource_ids = [r.id for r in self.resources if r.site_id == site1.id]
@@ -466,56 +431,7 @@ class JlabLQCDImpl(
         last_incidents = {}
         d = datetime.datetime(2025, 3, 1, 10, 0, 0, tzinfo=datetime.timezone.utc)
 
-        # generate some events and incidents
-        # here every incident only has events from a single resource,
-        # but in reality it is possible for an incident to have events from multiple resources
-        for _i in range(0, 1000):
-            r = random.choice(self.resources)
-            status = statuses[r.name]
-            event = status_models.Event(
-                id=demo_uuid("event", f"{r.name}_{d.isoformat()}"),
-                name=f"{r.name} is {status.value}",
-                description=f"{r.name} is {status.value}",
-                occurred_at=d,
-                status=status,
-                resource_id=r.id,
-                last_modified=day_ago,
-            )
-            self.events.append(event)
-            if r.name in last_incidents:
-                inc = last_incidents[r.name]
-                event.incident_id = inc.id
-                inc.event_ids.append(event.id)
-                if status == status_models.Status.up:
-                    inc.end = d
-                    del last_incidents[r.name]
-
-            if random.random() > 0.9:
-                if status == status_models.Status.down:
-                    statuses[r.name] = status_models.Status.up
-                else:
-                    statuses[r.name] = status_models.Status.down
-                    dstr = d.strftime("%Y-%m-%d %H:%M:%S.%f%z")
-                    incident = status_models.Incident(
-                        id=demo_uuid("incident", f"{r.name}_{dstr}"),
-                        name=f"{r.name} incident at {dstr}",
-                        description=f"{r.name} incident at {dstr}",
-                        status=status_models.Status.down,
-                        event_ids=[],
-                        resource_ids=random.choices(
-                            [r.id for r in self.resources], k=3
-                        ),
-                        start=d,
-                        end=d,
-                        type=random.choice(list(status_models.IncidentType)),
-                        resolution=random.choice(list(status_models.Resolution)),
-                        last_modified=d,
-                    )
-                    self.incidents.append(incident)
-                    last_incidents[r.name] = incident
-
-            d += datetime.timedelta(minutes=int(random.random() * 15 + 1))
-
+        
     # ----------------------------
     # Facility API
     # ----------------------------
@@ -585,6 +501,12 @@ class JlabLQCDImpl(
         capability: Capability | None = None,
         site_id: str | None = None,
     ) -> list[status_models.Resource]:
+        # for now we just update status of computing node cluster
+        for r in self.resources:
+            if r.name == "Jlab LQCD Cluster":
+                r.current_status = await slurm.get_cluster_status()
+                r.last_modified = datetime.datetime.now()
+        
         resources = status_models.Resource.find(
             self.resources,
             name=name,
@@ -622,8 +544,28 @@ class JlabLQCDImpl(
         time_: datetime.datetime | None = None,
         modified_since: datetime.datetime | None = None,
     ) -> list[status_models.Event]:
+        lqcd_events = await lqcdweb.get_lqcd_cluster_events()
+        total_events: list[status_models.Event] = []
+        for event in lqcd_events:
+            lustre_name = "Lustre"
+            if lustre_name.casefold() in event.subject.casefold():
+                r_id = demo_uuid("resource", "cache")
+            else:
+                r_id = demo_uuid("resource", "jlab-lqcd-nodes")
+
+            total_events.append(status_models.Event(
+                id=demo_uuid("event", str(event.id)),
+                name=event.subject,
+                description=event.content,
+                last_modified=datetime.datetime.fromtimestamp(event.ctime/1000),
+                occurred_at=datetime.datetime.fromtimestamp(event.ctime/1000),
+                status=status_models.Status.unknown,
+                resource_id=r_id,
+            ))
+
+        self.events = total_events  # save to self.events for later use
         events = status_models.Event.find(
-            self.events,
+            total_events,
             incident_id=incident_id,
             resource_id=resource_id,
             name=name,
@@ -637,6 +579,8 @@ class JlabLQCDImpl(
         return paginate_list(events, offset, limit)
 
     async def get_event(self: "JlabLQCDImpl", id_: str) -> status_models.Event | None:
+        if not self.events:
+            await self.get_events(0, 1000)
         return status_models.Event.find_by_id(self.events, id_)
 
     async def get_incidents(

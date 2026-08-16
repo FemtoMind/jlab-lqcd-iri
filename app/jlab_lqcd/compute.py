@@ -7,6 +7,7 @@ from ..routers.compute import models as compute_models
 from ..routers.status import models as status_models
 from ..types.user import User
 from ..request_context import get_iri_facility_project
+from ..utils import demo_uuid
 
 
 def utc_timestamp() -> int:
