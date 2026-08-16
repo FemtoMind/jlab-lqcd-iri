@@ -26,13 +26,13 @@ For more information, see: [https://iri.science/](https://iri.science/)
 # version is the openapi.json spec version
 # /api/v2 mount point means it's the latest backward-compatible url
 API_CONFIG = {
-    "title": "IRI Facility API reference implementation",
+    "title": "Jefferson Lab LQCD - IRI Facility API Implementation",
     "description": description,
     "version": API_VERSION,
     "docs_url": f"/{API_URL}",
     "openapi_url": f"/{API_URL}/openapi.json",
-    "contact": {"name": "Facility API contact", "url": "https://www.somefacility.gov/about/contact-us/"},
-    "terms_of_service": "https://www.somefacility.gov/terms-of-service",
+    "contact": {"name": "Jefferson Lab LQCD", "url": "https://lqcd.jlab.org/"},
+    "terms_of_service": "https://lqcd.jlab.org/",
 }
 try:
     # optionally overload the init params
