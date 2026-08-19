@@ -1,0 +1,14 @@
+{
+    "python.analysis.extraPaths": [
+        "/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode",
+        "/home/chen/amsc/iri-facility-api-python/app",
+    ],
+    "python.autoComplete.extraPaths": [
+        "/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode",
+        "/home/chen/amsc/iri-facility-api-python/app",
+    ],
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": false,
+    "python.languageServer": "Default",
+    "python.analysis.diagnosticMode": "workspace",
+}
