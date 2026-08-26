@@ -17,6 +17,8 @@ line-length = 200
 exclude = [".venv", "__pycache__", "build", "dist"]
 
 [tool.pyright]
+venvPath = "."
+venv = ".venv"
 extraPaths = [
     "/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode"
 ]

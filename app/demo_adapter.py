@@ -2,6 +2,7 @@
 A demo adapter for the IRI Facility API that returns hardcoded data.
 This is useful for testing and development of the API without needing to connect to real resources
 """
+
 import base64
 import datetime
 import glob
@@ -15,7 +16,6 @@ import subprocess
 import uuid
 
 from fastapi import HTTPException
-from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
 from .routers.account import facility_adapter as account_adapter
@@ -52,6 +52,7 @@ def paginate_list(items, offset: int | None, limit: int | None):
         items = items[:limit]
     return items
 
+
 class CommandError(RuntimeError):
     """Raised when an external subprocess command fails."""
 
@@ -66,6 +67,7 @@ class CommandError(RuntimeError):
 
 class PathSandbox:
     """A simple sandbox for file operations."""
+
     _base_temp_dir = None
 
     @classmethod
@@ -99,11 +101,16 @@ def utc_timestamp() -> int:
 
 
 class DemoAdapter(
-    status_adapter.FacilityAdapter, account_adapter.FacilityAdapter, compute_adapter.FacilityAdapter,
-    filesystem_adapter.FacilityAdapter, storage_adapter.FacilityAdapter,
-    task_adapter.FacilityAdapter, facility_adapter.FacilityAdapter
+    status_adapter.FacilityAdapter,
+    account_adapter.FacilityAdapter,
+    compute_adapter.FacilityAdapter,
+    filesystem_adapter.FacilityAdapter,
+    storage_adapter.FacilityAdapter,
+    task_adapter.FacilityAdapter,
+    facility_adapter.FacilityAdapter,
 ):
     """A demo implementation of the FacilityAdapter that returns hardcoded data."""
+
     def __init__(self):
         self.resources = []
         self.incidents = []
@@ -653,11 +660,11 @@ class DemoAdapter(
         return "gtorok"
 
     async def get_current_user_globus(
-            self: "DemoAdapter",
-            api_key: str,
-            client_ip: str,
-            globus_introspect: dict | None,
-        ) -> str:
+        self: "DemoAdapter",
+        api_key: str,
+        client_ip: str,
+        globus_introspect: dict | None,
+    ) -> str:
         """
         Decode the api_key and return the authenticated user's id from information returned by introspecting a globus token.
         This method is not called directly, rather authorized endpoints "depend" on it.
@@ -786,9 +793,9 @@ class DemoAdapter(
         # call slurm/etc. to cancel job
         return True
 
-# ----------------------------------------------
-# Storage API
-# ----------------------------------------------
+    # ----------------------------------------------
+    # Storage API
+    # ----------------------------------------------
 
     @staticmethod
     def _slugify_project(name: str) -> str:
@@ -801,10 +808,7 @@ class DemoAdapter(
 
     def _user_member_of(self, user: User, project_code: str) -> bool:
         """Authorization check: is the user a member of the named project?"""
-        return any(
-            user.id in p.user_ids and self._slugify_project(p.name) == project_code
-            for p in self.projects
-        )
+        return any(user.id in p.user_ids and self._slugify_project(p.name) == project_code for p in self.projects)
 
     def _resolve_path(self, template: str, user: User, project: str | None) -> str:
         first = user.id[0] if user.id else "u"
@@ -857,17 +861,19 @@ class DemoAdapter(
             expand_over = project_codes if is_project_scoped else [None]
 
             for code in expand_over:
-                result.append(storage_models.StorageInstance(
-                    logical_name=m.logical_name,
-                    path=self._resolve_path(m.path, user, code),
-                    filesystem=m.filesystem,
-                    performance_tier=m.performance_tier,
-                    quota_bytes=m.quota_bytes,
-                    available_bytes=m.available_bytes,
-                    purge_policy_days=m.purge_policy_days,
-                    shared=m.shared,
-                    access=m.access,
-                ))
+                result.append(
+                    storage_models.StorageInstance(
+                        logical_name=m.logical_name,
+                        path=self._resolve_path(m.path, user, code),
+                        filesystem=m.filesystem,
+                        performance_tier=m.performance_tier,
+                        quota_bytes=m.quota_bytes,
+                        available_bytes=m.available_bytes,
+                        purge_policy_days=m.purge_policy_days,
+                        shared=m.shared,
+                        access=m.access,
+                    )
+                )
         return result
 
     def validate_path(self, path: str, allow_symlinks: bool = True) -> str:
@@ -887,9 +893,9 @@ class DemoAdapter(
 
         return real_path
 
-# ----------------------------------------------
-# Filesystem API
-# ----------------------------------------------
+    # ----------------------------------------------
+    # Filesystem API
+    # ----------------------------------------------
     def _run(self, args, *, shell: bool = False, timeout: int | None = 3600, text: bool = True) -> subprocess.CompletedProcess:
         """
         Run a subprocess command and catch exceptions.
@@ -906,7 +912,6 @@ class DemoAdapter(
         except OSError as exc:
             logger.warning(f"OS error running command: {args}\nError: {exc}")
             raise CommandError(cmd=args, returncode=None, stdout=None, stderr=str(exc)) from exc
-
 
     def _file(self, path: str) -> filesystem_models.File:
         # Get file stats (follows symlinks by default)
@@ -954,7 +959,6 @@ class DemoAdapter(
             data["link_target"] = link_target
 
         return filesystem_models.File(**data)
-
 
     async def chmod(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PutFileChmodRequest) -> filesystem_models.PutFileChmodResponse:
         rp = self.validate_path(request_model.path)
@@ -1030,12 +1034,8 @@ class DemoAdapter(
         content = self._headtail("head", path, file_bytes, lines, skip_trailing=skip_trailing)
 
         fc = filesystem_models.FileContent(
-            content=content,
-            content_type=(filesystem_models.ContentUnit.bytes
-                          if file_bytes is not None
-                          else filesystem_models.ContentUnit.lines),
-            start_position=0,
-            end_position=len(content))
+            content=content, content_type=(filesystem_models.ContentUnit.bytes if file_bytes is not None else filesystem_models.ContentUnit.lines), start_position=0, end_position=len(content)
+        )
 
         return filesystem_models.GetFileHeadResponse(output=fc)
 
@@ -1052,28 +1052,17 @@ class DemoAdapter(
         content = self._headtail("tail", path, file_bytes, lines, skip_heading=skip_heading)
 
         fc = filesystem_models.FileContent(
-            content=content,
-            content_type=(filesystem_models.ContentUnit.bytes
-                          if file_bytes is not None
-                          else filesystem_models.ContentUnit.lines),
-            start_position=0,
-            end_position=len(content))
+            content=content, content_type=(filesystem_models.ContentUnit.bytes if file_bytes is not None else filesystem_models.ContentUnit.lines), start_position=0, end_position=len(content)
+        )
 
         return filesystem_models.GetFileTailResponse(output=fc)
-
-
 
     async def view(self: "DemoAdapter", resource: status_models.Resource, user: User, path: str, size: int, offset: int) -> filesystem_models.GetViewFileResponse:
         rp = self.validate_path(path)
         result = self._run(f"tail -c +{offset + 1} {rp} | head -c {size}", shell=True)
         content = result.stdout
         return filesystem_models.GetViewFileResponse(
-            output=filesystem_models.FileContent(
-                content=content,
-                content_type=filesystem_models.ContentUnit.bytes,
-                start_position=offset,
-                end_position=offset + len(content)
-            ),
+            output=filesystem_models.FileContent(content=content, content_type=filesystem_models.ContentUnit.bytes, start_position=offset, end_position=offset + len(content)),
         )
 
     async def checksum(self: "DemoAdapter", resource: status_models.Resource, user: User, path: str) -> filesystem_models.GetFileChecksumResponse:
@@ -1135,9 +1124,7 @@ class DemoAdapter(
         self._run(args)
         return filesystem_models.PostMkdirResponse(output=self._file(rp))
 
-    async def symlink(
-        self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostFileSymlinkRequest
-    ) -> filesystem_models.PostFileSymlinkResponse:
+    async def symlink(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostFileSymlinkRequest) -> filesystem_models.PostFileSymlinkResponse:
         rp_src = self.validate_path(request_model.path)
         rp_dst = self.validate_path(request_model.link_path)
         self._run(["ln", "-s", rp_src, rp_dst])
@@ -1164,9 +1151,7 @@ class DemoAdapter(
             raise Exception(f"Don't know how to handle variable of type: {type(content)}")
         return filesystem_models.PutFileUploadResponse(output=f"Uploaded to {rp}")
 
-    async def compress(
-        self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostCompressRequest
-    ) -> filesystem_models.PostCompressResponse:
+    async def compress(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostCompressRequest) -> filesystem_models.PostCompressResponse:
         src_rp = self.validate_path(request_model.path)
         dst_rp = self.validate_path(request_model.target_path)
 
@@ -1258,6 +1243,7 @@ class DemoAdapter(
 
 class DemoTask(BaseModel):
     """A simple in-memory task queue for demonstration purposes."""
+
     id: str
     task: str
     resource: status_models.Resource
@@ -1269,6 +1255,7 @@ class DemoTask(BaseModel):
 
 class DemoTaskQueue:
     """A simple in-memory task queue for demonstration purposes."""
+
     tasks = []
 
     @staticmethod
