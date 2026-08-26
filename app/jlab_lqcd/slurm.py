@@ -30,7 +30,9 @@ class SlurmCommandError(RuntimeError):
         super().__init__(f"Slurm command failed: {cmd} (rc={returncode})")
 
 
-async def run_slurm_command(cmd: list[str], timeout: float = 30.0, stdin: str | None = None) -> str:
+async def run_slurm_command(
+    cmd: list[str], timeout: float = 30.0, stdin: str | None = None
+) -> str:
     """Run an external command asynchronously and return its stdout.
 
     Raises SlurmCommandError if the command fails.
@@ -47,14 +49,18 @@ async def run_slurm_command(cmd: list[str], timeout: float = 30.0, stdin: str | 
         )
         try:
             stdin_bytes = stdin.encode("utf-8") if stdin is not None else None
-            stdout, stderr = await asyncio.wait_for(proc.communicate(input=stdin_bytes), timeout=timeout)
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=stdin_bytes), timeout=timeout
+            )
         except asyncio.TimeoutError as e:
             try:
                 proc.kill()
                 await proc.wait()
             except Exception:
                 pass
-            logger.error("Command timed out after %s seconds: %s", timeout, " ".join(cmd))
+            logger.error(
+                "Command timed out after %s seconds: %s", timeout, " ".join(cmd)
+            )
             raise SlurmCommandError(
                 cmd=" ".join(cmd),
                 returncode=-1,
@@ -91,7 +97,13 @@ async def run_slurm_command(cmd: list[str], timeout: float = 30.0, stdin: str | 
 
 async def get_all_slurm_projects() -> list[SlurmProject]:
     """Get all projects for all users."""
-    cmd = ["sacctmgr", "show", "associations", "format=Account%20,User,Partition,Cluster", "-n"]
+    cmd = [
+        "sacctmgr",
+        "show",
+        "associations",
+        "format=Account%20,User,Partition,Cluster",
+        "-n",
+    ]
     result = await run_slurm_command(cmd)
     # Process the result line by line
     lines = result.strip().split("\n")
@@ -139,9 +151,19 @@ async def get_all_slurm_projects() -> list[SlurmProject]:
 
 
 # Get a project allocation information including used information
-async def get_project_allocation(project_name: str) -> list[account_models.AllocationEntry]:
+async def get_project_allocation(
+    project_name: str,
+) -> list[account_models.AllocationEntry]:
     """Get a project allocation information including used information."""
-    cmd = ["sacctmgr", "show", "associations", "where", f"Account={project_name}", "format=Share", "-n"]
+    cmd = [
+        "sacctmgr",
+        "show",
+        "associations",
+        "where",
+        f"Account={project_name}",
+        "format=Share",
+        "-n",
+    ]
     result = await run_slurm_command(cmd)
     # Process the result line by line
     lines = result.strip().split("\n")
@@ -168,7 +190,16 @@ async def get_project_allocation(project_name: str) -> list[account_models.Alloc
     # convert start_date to string YYYY-MM-DD
     start_date_str = start_date.strftime("%Y-%m-%d")
 
-    cmd = ["sreport", "-t", "hours", "cluster", "AccountUtilizationByUser", f"start={start_date_str}", f"Account={project_name}", "-n"]
+    cmd = [
+        "sreport",
+        "-t",
+        "hours",
+        "cluster",
+        "AccountUtilizationByUser",
+        f"start={start_date_str}",
+        f"Account={project_name}",
+        "-n",
+    ]
     result = await run_slurm_command(cmd)
     # Process the result line by line
     lines = result.strip().split("\n")
@@ -233,7 +264,9 @@ async def get_cluster_status() -> status_models.Status:
 
 
 # Convert compute_models.JobSpec to sbatch script
-def job_spec_to_sbatch(job_spec: compute_models.JobSpec, account: str | None = None) -> str:
+def job_spec_to_sbatch(
+    job_spec: compute_models.JobSpec, account: str | None = None
+) -> str:
     """Convert a JobSpec and resolved account into a complete sbatch script string."""
     lines = ["#!/bin/bash"]
 
@@ -257,7 +290,9 @@ def job_spec_to_sbatch(job_spec: compute_models.JobSpec, account: str | None = N
         lines.append("#SBATCH --export=NONE")
 
     # 2. Account (prioritizing resolved parameter over attributes.account)
-    resolved_account = account or (job_spec.attributes.account if job_spec.attributes else None)
+    resolved_account = account or (
+        job_spec.attributes.account if job_spec.attributes else None
+    )
     if resolved_account:
         lines.append(f"#SBATCH --account={resolved_account}")
 
@@ -339,7 +374,11 @@ def job_spec_to_sbatch(job_spec: compute_models.JobSpec, account: str | None = N
     if job_spec.container:
         cmd_parts.extend(["apptainer", "exec"])
         # Check if container needs GPU support
-        if job_spec.resources and job_spec.resources.gpu_cores_per_process is not None and job_spec.resources.gpu_cores_per_process > 0:
+        if (
+            job_spec.resources
+            and job_spec.resources.gpu_cores_per_process is not None
+            and job_spec.resources.gpu_cores_per_process > 0
+        ):
             cmd_parts.append("--nv")
 
         # Bind mounts
@@ -383,7 +422,9 @@ def _make_failed_job(msg: str) -> compute_models.Job:
 
 
 # Submit a job specified by a JobSpec and return a Job
-async def submit_job(user: str, account: str | None, job_spec: compute_models.JobSpec) -> compute_models.Job:
+async def submit_job(
+    user: str, account: str | None, job_spec: compute_models.JobSpec
+) -> compute_models.Job:
     # Use sbatch to submit the job.
     # check whether this process is running as root or not
     # if not, check if it is running as the same user as the slurm job
@@ -393,7 +434,9 @@ async def submit_job(user: str, account: str | None, job_spec: compute_models.Jo
         logger.warning("This process is not running as root!")
         server_owner = get_process_owner()
         if server_owner != user:
-            logger.warning("This process is not running as the same user as the slurm job!")
+            logger.warning(
+                "This process is not running as the same user as the slurm job!"
+            )
             cmd: list[str] = ["sudo", "sbatch"]
         else:
             logger.info("This process is running as the same user as the slurm job!")
@@ -616,7 +659,9 @@ def sbatch_to_job_spec(sbatch_content: str) -> compute_models.JobSpec:
                 k, v = expr.split("=", 1)
                 k = k.strip()
                 v = v.strip()
-                if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+                if (v.startswith('"') and v.endswith('"')) or (
+                    v.startswith("'") and v.endswith("'")
+                ):
                     v = v[1:-1]
 
                 if k.startswith("APPTAINERENV_"):
@@ -674,7 +719,12 @@ def sbatch_to_job_spec(sbatch_content: str) -> compute_models.JobSpec:
             launcher = tokens[0]
             tokens = tokens[1:]
 
-        if tokens and tokens[0] in ("apptainer", "singularity") and len(tokens) > 1 and tokens[1] == "exec":
+        if (
+            tokens
+            and tokens[0] in ("apptainer", "singularity")
+            and len(tokens) > 1
+            and tokens[1] == "exec"
+        ):
             tokens = tokens[2:]
 
             volume_mounts = []
@@ -694,7 +744,11 @@ def sbatch_to_job_spec(sbatch_content: str) -> compute_models.JobSpec:
                         src = parts[0]
                         tgt = parts[1] if len(parts) > 1 else src
                         mode = parts[2] if len(parts) > 2 else "rw"
-                        volume_mounts.append(compute_models.VolumeMount(source=src, target=tgt, read_only=mode == "ro"))
+                        volume_mounts.append(
+                            compute_models.VolumeMount(
+                                source=src, target=tgt, read_only=mode == "ro"
+                            )
+                        )
                         idx += 2
                     else:
                         idx += 1
@@ -706,7 +760,9 @@ def sbatch_to_job_spec(sbatch_content: str) -> compute_models.JobSpec:
                     break
 
             if container_image:
-                container = compute_models.Container(image=container_image, volume_mounts=volume_mounts)
+                container = compute_models.Container(
+                    image=container_image, volume_mounts=volume_mounts
+                )
 
             if idx < len(tokens):
                 executable = tokens[idx]
@@ -719,11 +775,28 @@ def sbatch_to_job_spec(sbatch_content: str) -> compute_models.JobSpec:
         pre_launch_lines = non_env_body_lines
         post_launch_lines = []
 
-    pre_launch = "\n".join(line.strip() for line in pre_launch_lines if line.strip()) or None
-    post_launch = "\n".join(line.strip() for line in post_launch_lines if line.strip()) or None
+    pre_launch = (
+        "\n".join(line.strip() for line in pre_launch_lines if line.strip()) or None
+    )
+    post_launch = (
+        "\n".join(line.strip() for line in post_launch_lines if line.strip()) or None
+    )
 
     resources = None
-    if any(v is not None for v in (node_count, process_count, processes_per_node, cpu_cores_per_process, gpu_cores_per_process, memory)) or exclusive_node_use:
+    if (
+        any(
+            v is not None
+            for v in (
+                node_count,
+                process_count,
+                processes_per_node,
+                cpu_cores_per_process,
+                gpu_cores_per_process,
+                memory,
+            )
+        )
+        or exclusive_node_use
+    ):
         resources = compute_models.ResourceSpec(
             node_count=node_count,
             process_count=process_count,
@@ -735,8 +808,17 @@ def sbatch_to_job_spec(sbatch_content: str) -> compute_models.JobSpec:
         )
 
     attributes = None
-    if any(v is not None for v in (duration, queue_name, account, reservation_id)) or custom_attributes:
-        attributes = compute_models.JobAttributes(duration=duration, queue_name=queue_name, account=account, reservation_id=reservation_id, custom_attributes=custom_attributes)
+    if (
+        any(v is not None for v in (duration, queue_name, account, reservation_id))
+        or custom_attributes
+    ):
+        attributes = compute_models.JobAttributes(
+            duration=duration,
+            queue_name=queue_name,
+            account=account,
+            reservation_id=reservation_id,
+            custom_attributes=custom_attributes,
+        )
 
     return compute_models.JobSpec(
         executable=executable,
@@ -766,7 +848,9 @@ def sbatch_file_to_job_spec(file_path: str) -> compute_models.JobSpec:
 
 
 # convert slurm job state to compute_models.JobState and a message
-def convert_slurm_state_to_model_state_and_msg(state: str) -> tuple[compute_models.JobState, str]:
+def convert_slurm_state_to_model_state_and_msg(
+    state: str,
+) -> tuple[compute_models.JobState, str]:
     """
     Convert a Slurm job state to a compute_models.JobState and a message.
 
@@ -840,7 +924,9 @@ async def get_running_job_spec(user: str, job_id: str) -> compute_models.JobSpec
     try:
         output = await run_slurm_command(spec_cmd)
     except SlurmCommandError as slurm_e:
-        logger.warning(f"Failed to run scontrol write batch_script command. Details: {slurm_e.stderr}")
+        logger.warning(
+            f"Failed to run scontrol write batch_script command. Details: {slurm_e.stderr}"
+        )
         return None
 
     job_spec: compute_models.JobSpec = sbatch_to_job_spec(output)
@@ -848,7 +934,9 @@ async def get_running_job_spec(user: str, job_id: str) -> compute_models.JobSpec
 
 
 # Get a job status using jobid
-async def get_job_status(user: str, job_id: str, historical: bool = False, include_spec: bool = False) -> tuple[compute_models.JobStatus, compute_models.JobSpec | None]:
+async def get_job_status(
+    user: str, job_id: str, historical: bool = False, include_spec: bool = False
+) -> tuple[compute_models.JobStatus, compute_models.JobSpec | None]:
     hist_cmd: list[str] = ["sacct", "-j", job_id, "-o", "ExitCode,State", "-n"]
     cur_cmd: list[str] = ["squeue", "-j", job_id, "--format=%i %t", "-h"]
 
@@ -860,7 +948,9 @@ async def get_job_status(user: str, job_id: str, historical: bool = False, inclu
     try:
         output = await run_slurm_command(cur_cmd)
     except SlurmCommandError as slurm_e:
-        logger.info(f"Debug: invalid job id in squeue command. Details: {slurm_e.stderr}")
+        logger.info(
+            f"Debug: invalid job id in squeue command. Details: {slurm_e.stderr}"
+        )
     except Exception as e:
         logger.info(f"Failed to run squeue command. Details: {e}")
         output = ""
@@ -875,7 +965,11 @@ async def get_job_status(user: str, job_id: str, historical: bool = False, inclu
 
             job_state, msg = convert_slurm_state_to_model_state_and_msg(state)
             job_status: compute_models.JobStatus = compute_models.JobStatus(
-                state=job_state, time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()), message=msg, exit_code=0, meta_data={"username": user, "job_id": job_id}
+                state=job_state,
+                time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()),
+                message=msg,
+                exit_code=0,
+                meta_data={"username": user, "job_id": job_id},
             )
 
             job_spec: compute_models.JobSpec | None = None
@@ -892,7 +986,11 @@ async def get_job_status(user: str, job_id: str, historical: bool = False, inclu
             state = compute_models.JobState.FAILED
             msg = f"Failed to find job {job_id} in Slurm history."
             job_status: compute_models.JobStatus = compute_models.JobStatus(
-                state=state, time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()), message=msg, exit_code=0, meta_data={"username": user, "job_id": job_id}
+                state=state,
+                time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()),
+                message=msg,
+                exit_code=0,
+                meta_data={"username": user, "job_id": job_id},
             )
             return job_status, None
 
@@ -901,7 +999,11 @@ async def get_job_status(user: str, job_id: str, historical: bool = False, inclu
             state = compute_models.JobState.FAILED
             msg = f"Failed to parse job {job_id} in Slurm history. The output of {hist_cmd} is {output}"
             job_status: compute_models.JobStatus = compute_models.JobStatus(
-                state=state, time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()), message=msg, exit_code=0, meta_data={"username": user, "job_id": job_id}
+                state=state,
+                time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()),
+                message=msg,
+                exit_code=0,
+                meta_data={"username": user, "job_id": job_id},
             )
             return job_status, None
 
@@ -909,7 +1011,11 @@ async def get_job_status(user: str, job_id: str, historical: bool = False, inclu
         exitcode = int(parts[0].split(":")[0])
         job_state, msg = convert_slurm_state_to_model_state_and_msg(state)
         job_status: compute_models.JobStatus = compute_models.JobStatus(
-            state=job_state, time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()), message=msg, exit_code=exitcode, meta_data={"username": user, "job_id": job_id}
+            state=job_state,
+            time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()),
+            message=msg,
+            exit_code=exitcode,
+            meta_data={"username": user, "job_id": job_id},
         )
 
         return job_status, None
@@ -920,7 +1026,14 @@ async def get_job_status(user: str, job_id: str, historical: bool = False, inclu
 
 # Get all jobs of a user using a filter. Currently only filter by time range is supported.
 # starttime YYYY-MM-DD, endtime YYYY-MM-DD (default now)
-async def get_user_jobs(user: str, filters: dict[str, object] | None = None, historical: bool = False, include_spec: bool = False, offset: int = 0, limit: int = 100) -> list[compute_models.Job]:
+async def get_user_jobs(
+    user: str,
+    filters: dict[str, object] | None = None,
+    historical: bool = False,
+    include_spec: bool = False,
+    offset: int = 0,
+    limit: int = 100,
+) -> list[compute_models.Job]:
     """Get all jobs of a user using a filter. Currently only filter by time range is supported.
 
     Args:
@@ -969,17 +1082,34 @@ async def get_user_jobs(user: str, filters: dict[str, object] | None = None, his
         for job_id, state in job_status_list:
             job_state, msg = convert_slurm_state_to_model_state_and_msg(state)
             job_status: compute_models.JobStatus = compute_models.JobStatus(
-                state=job_state, time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()), message=msg, exit_code=0, meta_data={"username": user, "job_id": job_id}
+                state=job_state,
+                time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()),
+                message=msg,
+                exit_code=0,
+                meta_data={"username": user, "job_id": job_id},
             )
 
             job_spec = None
             if include_spec:
                 job_spec = await get_running_job_spec(user, job_id)
-            job_list.append(compute_models.Job(id=job_id, status=job_status, job_spec=job_spec))
+            job_list.append(
+                compute_models.Job(id=job_id, status=job_status, job_spec=job_spec)
+            )
 
     # Now check whether we need to check historical data or not
     if historical and num < limit:
-        hist_cmd: list[str] = ["sacct", "-u", user, "--starttime", start_time, "--endtime", end_time, "-o", "JobId,State,ExitCode", "-n"]
+        hist_cmd: list[str] = [
+            "sacct",
+            "-u",
+            user,
+            "--starttime",
+            start_time,
+            "--endtime",
+            end_time,
+            "-o",
+            "JobId,State,ExitCode",
+            "-n",
+        ]
         output = await run_slurm_command(hist_cmd)
         lines = output.strip().split("\n")
         for line in lines:
@@ -996,9 +1126,15 @@ async def get_user_jobs(user: str, filters: dict[str, object] | None = None, his
             exit_code = int(parts[2].split(":")[0])
             job_state, msg = convert_slurm_state_to_model_state_and_msg(state)
             job_status: compute_models.JobStatus = compute_models.JobStatus(
-                state=job_state, time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()), message=msg, exit_code=exit_code, meta_data={"username": user, "job_id": job_id}
+                state=job_state,
+                time=int(datetime.datetime.now(datetime.timezone.utc).timestamp()),
+                message=msg,
+                exit_code=exit_code,
+                meta_data={"username": user, "job_id": job_id},
             )
-            job_list.append(compute_models.Job(id=job_id, status=job_status, job_spec=None))
+            job_list.append(
+                compute_models.Job(id=job_id, status=job_status, job_spec=None)
+            )
             num += 1
             if num > limit:
                 break
@@ -1085,7 +1221,10 @@ def job_spec_to_dict(job_spec: compute_models.JobSpec) -> dict[str, object]:
         # 4. Custom attributes mapping to supported update fields
         if attrs.custom_attributes:
             # Create a map from lowercase names (with dashes/underscores removed) to the actual supported field name
-            supported_map = {f.lower().replace("-", "").replace("_", ""): f for f in _supported_job_update_spec_fields}
+            supported_map = {
+                f.lower().replace("-", "").replace("_", ""): f
+                for f in _supported_job_update_spec_fields
+            }
             for k, v in attrs.custom_attributes.items():
                 clean_k = k.lstrip("-").lower().replace("-", "").replace("_", "")
                 if clean_k in supported_map:
@@ -1093,6 +1232,7 @@ def job_spec_to_dict(job_spec: compute_models.JobSpec) -> dict[str, object]:
                     result[field_name] = v
 
     return result
+
 
 # inner function to be used by this function to clean the value.
 # It will return None if the value is "none", "n/a", "unknown" or None.
@@ -1102,6 +1242,7 @@ def _clean_val(v: str | None) -> str | None:
     if v.lower() in ("none", "n/a", "unknown"):
         return None
     return v
+
 
 # convert scontrol show job xyz to compute_models.JobSpec
 async def parse_scontrol_show_job(job_id: str) -> compute_models.JobSpec | None:
@@ -1123,7 +1264,7 @@ async def parse_scontrol_show_job(job_id: str) -> compute_models.JobSpec | None:
     # Regex to find key=value pairs
     # Handles values enclosed in quotes or standard non-space strings
     pattern = re.compile(r'([\w/:]+)=("(?:[^"\\]|\\.)*"|\S+)')
-    
+
     job_data = {}
     for match in pattern.finditer(output):
         key, value = match.groups()
@@ -1212,7 +1353,20 @@ async def parse_scontrol_show_job(job_id: str) -> compute_models.JobSpec | None:
         memory = _parse_slurm_memory(mem_str)
 
     resources = None
-    if any(v is not None for v in (node_count, process_count, processes_per_node, cpu_cores_per_process, gpu_cores_per_process, memory)) or exclusive_node_use:
+    if (
+        any(
+            v is not None
+            for v in (
+                node_count,
+                process_count,
+                processes_per_node,
+                cpu_cores_per_process,
+                gpu_cores_per_process,
+                memory,
+            )
+        )
+        or exclusive_node_use
+    ):
         resources = compute_models.ResourceSpec(
             node_count=node_count,
             process_count=process_count,
@@ -1226,7 +1380,10 @@ async def parse_scontrol_show_job(job_id: str) -> compute_models.JobSpec | None:
     # Attributes
     duration = None
     time_limit_str = job_data.get("TimeLimit")
-    if time_limit_str and time_limit_str.upper() not in ("UNLIMITED", "PARTITION_LIMIT"):
+    if time_limit_str and time_limit_str.upper() not in (
+        "UNLIMITED",
+        "PARTITION_LIMIT",
+    ):
         duration = _parse_slurm_duration(time_limit_str)
 
     queue_name = _clean_val(job_data.get("Partition"))
@@ -1241,20 +1398,34 @@ async def parse_scontrol_show_job(job_id: str) -> compute_models.JobSpec | None:
             k_lower = k.lower()
             if k_lower in supported_lower:
                 if k_lower not in (
-                    "jobname", "name", "workdir", "stdin", "stdout", "stderr",
-                    "numnodes", "numtasks", "cpuspertask", "cpus/task",
-                    "account", "partition", "reservation", "timelimit"
+                    "jobname",
+                    "name",
+                    "workdir",
+                    "stdin",
+                    "stdout",
+                    "stderr",
+                    "numnodes",
+                    "numtasks",
+                    "cpuspertask",
+                    "cpus/task",
+                    "account",
+                    "partition",
+                    "reservation",
+                    "timelimit",
                 ):
                     custom_attributes[k.lower()] = v_clean
 
     attributes = None
-    if any(v is not None for v in (duration, queue_name, account, reservation_id)) or custom_attributes:
+    if (
+        any(v is not None for v in (duration, queue_name, account, reservation_id))
+        or custom_attributes
+    ):
         attributes = compute_models.JobAttributes(
             duration=duration,
             queue_name=queue_name,
             account=account,
             reservation_id=reservation_id,
-            custom_attributes=custom_attributes
+            custom_attributes=custom_attributes,
         )
 
     return compute_models.JobSpec(
@@ -1270,14 +1441,18 @@ async def parse_scontrol_show_job(job_id: str) -> compute_models.JobSpec | None:
 
 
 # Update a job using a jobspec and a jobid
-async def update_job(user: str, account: str | None, job_spec: compute_models.JobSpec, job_id: str) -> compute_models.Job:
+async def update_job(
+    user: str, account: str | None, job_spec: compute_models.JobSpec, job_id: str
+) -> compute_models.Job:
     # This part will never get called since post command will catch this error.
     if account is None:
         raise ValueError("No account specified for job update")
 
     job_args = job_spec_to_dict(job_spec)
     if not job_args:
-        return _make_failed_job("No valid arguments found in job spec for scontrol update")
+        return _make_failed_job(
+            "No valid arguments found in job spec for scontrol update"
+        )
 
     cur_cmd: list[str] = ["squeue", "-j", job_id, "--format=%i %t %a", "-h"]
 
@@ -1286,14 +1461,20 @@ async def update_job(user: str, account: str | None, job_spec: compute_models.Jo
     try:
         output = await run_slurm_command(cur_cmd)
     except SlurmCommandError as slurm_e:
-        logger.info(f"Debug: invalid job id in squeue command. Details: {slurm_e.stderr}")
-        return _make_failed_job(f"Invalid job id in squeue command. Details: {slurm_e.stderr}")
+        logger.info(
+            f"Debug: invalid job id in squeue command. Details: {slurm_e.stderr}"
+        )
+        return _make_failed_job(
+            f"Invalid job id in squeue command. Details: {slurm_e.stderr}"
+        )
     except Exception as e:
         logger.info(f"Failed to run squeue command. Details: {e}")
         return _make_failed_job(f"Failed to run squeue command. Details: {e}")
 
     if output == "":
-        return _make_failed_job(f"Job {job_id} not found or not in active and pending state.")
+        return _make_failed_job(
+            f"Job {job_id} not found or not in active and pending state."
+        )
 
     lines = output.strip().split("\n")
     if len(lines) != 1:
@@ -1303,12 +1484,14 @@ async def update_job(user: str, account: str | None, job_spec: compute_models.Jo
         return _make_failed_job(f"Invalid output from squeue command: {output}")
     cur_account = parts[2]
     if cur_account != account:
-        return _make_failed_job(f"Job {job_id} is not in the correct account. Current account is {cur_account}, but expected {account}.")
-    
+        return _make_failed_job(
+            f"Job {job_id} is not in the correct account. Current account is {cur_account}, but expected {account}."
+        )
+
     # Check job status, if the state is active or completed, remove account from job_args
     if parts[1] not in ["PD", "PENDING"]:
         job_args.pop("Account", None)
-    
+
     # go through every pair of the dictionary and construct the command
     cmd: list[str] = ["scontrol", "update", f"jobid={job_id}"]
     for key, value in job_args.items():
@@ -1325,8 +1508,8 @@ async def update_job(user: str, account: str | None, job_spec: compute_models.Jo
         msg = e.stderr
     except Exception as e:
         logger.error(f"Failed to execute scontrol update command: {e}")
-        return _make_failed_job(f"Failed to execute scontrol update command: {e}") 
-        
+        return _make_failed_job(f"Failed to execute scontrol update command: {e}")
+
     if get_status:
         try:
             jst, _ = await get_job_status(user, job_id, False, False)
@@ -1346,8 +1529,9 @@ async def update_job(user: str, account: str | None, job_spec: compute_models.Jo
 
     return _make_failed_job("Failed to execute scontrol update command")
 
+
 # Cancel a job: return true if successful, false if failed
-async def cancel_job(job_id: str, user: str) -> tuple[bool, str]: 
+async def cancel_job(job_id: str, user: str) -> tuple[bool, str]:
     # First check if the job exists and the user is the owner
     chckcmd: list[str] = ["squeue", "-j", job_id, "--format=%i %u %t", "-h"]
 
@@ -1358,24 +1542,27 @@ async def cancel_job(job_id: str, user: str) -> tuple[bool, str]:
         return False, str(e.stderr)
     except Exception as e:
         logger.error(f"Failed to get job status: {e}")
-        return False, str(e)    
-    
+        return False, str(e)
+
     if output == "":
-        return False,"Job not found or not in active and pending state."    
-    
+        return False, "Job not found or not in active and pending state."
+
     lines = output.strip().split("\n")
     if len(lines) != 1:
         return False, "Squeeu command returned unexpected output format."
-    
+
     parts = lines[0].split()
     if len(parts) != 3:
         return False, "Squeeu command returned unexpected output format."
-    
+
     cur_user = parts[1]
     cur_state = parts[2]
-    
+
     if cur_user != user:
-        return False, f"Job not owned by user. Current user {cur_user}, expected {user}."
+        return (
+            False,
+            f"Job not owned by user. Current user {cur_user}, expected {user}.",
+        )
 
     # Cancel the job
     try:
@@ -1385,6 +1572,6 @@ async def cancel_job(job_id: str, user: str) -> tuple[bool, str]:
         return False, str(e.stderr)
     except Exception as e:
         logger.error(f"Failed to cancel job {job_id}: {e}")
-        return False, str(e)    
+        return False, str(e)
 
     return True, "Job cancelled successfully"
