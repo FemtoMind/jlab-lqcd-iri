@@ -1,5 +1,7 @@
 """Compute and job management API functions for JLab LQCD adapter."""
 
+from app import apilogger
+from app.jlab_lqcd import account
 import datetime
 import random
 
@@ -7,8 +9,11 @@ from ..routers.compute import models as compute_models
 from ..routers.status import models as status_models
 from ..types.user import User
 from ..request_context import get_iri_facility_project
-from ..utils import demo_uuid
+from ..apilogger import get_stream_logger
+from ..config import LOG_LEVEL
+from . import slurm
 
+logger = get_stream_logger(__name__, LOG_LEVEL)
 
 def utc_timestamp() -> int:
     """Return current UTC datetime timestamp as integer."""
@@ -23,20 +28,8 @@ async def submit_job(
 ) -> compute_models.Job:
     """Submit a job to the compute resource (Slurm)."""
     facility_project = get_iri_facility_project()
-    account = facility_project or (
-        job_spec.attributes.account if job_spec.attributes else None
-    )
-    # TODO: Implement actual Slurm submission logic using app.jlab_lqcd.slurm helper
-    return compute_models.Job(
-        id="job_123",
-        status=compute_models.JobStatus(
-            state=compute_models.JobState.NEW,
-            time=utc_timestamp(),
-            message="job submitted",
-            exit_code=0,
-            meta_data={"account": account},
-        ),
-    )
+    account = facility_project or (job_spec.attributes.account if job_spec.attributes else None)
+    return await slurm.submit_job(user.name, account, job_spec)
 
 
 async def update_job(
@@ -48,19 +41,10 @@ async def update_job(
 ) -> compute_models.Job:
     """Update a job spec/attributes on the compute resource."""
     facility_project = get_iri_facility_project()
-    account = facility_project or (
-        job_spec.attributes.account if job_spec.attributes else None
-    )
-    return compute_models.Job(
-        id=job_id,
-        status=compute_models.JobStatus(
-            state=compute_models.JobState.ACTIVE,
-            time=utc_timestamp(),
-            message="job updated",
-            exit_code=0,
-            meta_data={"account": account},
-        ),
-    )
+
+    account = facility_project or (job_spec.attributes.account if job_spec.attributes else None)
+
+    return await slurm.update_job(user.name, account, job_spec, job_id)
 
 
 async def get_job(
@@ -72,17 +56,21 @@ async def get_job(
     include_spec: bool = False,
 ) -> compute_models.Job:
     """Query a specific job's status."""
+    
+    try:
+        job_status, my_job_spec = await slurm.get_job_status(user.name, job_id, historical, include_spec)
+    except ValueError as e:
+        # Failed to get job status
+        return slurm._make_failed_job(f"Failed to get job status: {str(e)}")
+    except Exception as e:
+        logger.error(f"Failed to get job status: {e}")
+        return slurm._make_failed_job(f"Failed to get job status: {str(e)}")
+    
     return compute_models.Job(
         id=job_id,
-        status=compute_models.JobStatus(
-            state=compute_models.JobState.COMPLETED,
-            time=utc_timestamp(),
-            message="job completed successfully",
-            exit_code=0,
-            meta_data={"account": "account1"},
-        ),
+        status=job_status,
+        job_spec=my_job_spec,
     )
-
 
 async def get_jobs(
     adapter,
@@ -95,19 +83,7 @@ async def get_jobs(
     include_spec: bool = False,
 ) -> list[compute_models.Job]:
     """Query jobs under the compute resource."""
-    return [
-        compute_models.Job(
-            id=f"job_{i}",
-            status=compute_models.JobStatus(
-                state=random.choice([s for s in compute_models.JobState]),
-                time=utc_timestamp() - int(random.random() * 100),
-                message="",
-                exit_code=random.choice([0, 0, 0, 0, 0, 1, 1, 128, 127]),
-                meta_data={"account": "account1"},
-            ),
-        )
-        for i in range(random.randint(3, 10))
-    ]
+    return await slurm.get_user_jobs(user.name, filters, historical, include_spec, offset, limit)
 
 
 async def cancel_job(
@@ -115,7 +91,6 @@ async def cancel_job(
     resource: status_models.Resource,
     user: User,
     job_id: str,
-) -> bool:
+) -> tuple[bool,str]:
     """Cancel a running or pending job."""
-    # TODO: Implement actual Slurm cancel (scancel) logic
-    return True
+    return await slurm.cancel_job(job_id, user.name)
