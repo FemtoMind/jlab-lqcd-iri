@@ -1,3 +1,4 @@
+import datetime
 import traceback
 from abc import abstractmethod
 from ...types.user import User
@@ -10,6 +11,7 @@ from ...apilogger import get_stream_logger
 
 logger = get_stream_logger(__name__)
 
+
 class FacilityAdapter(AuthenticatedAdapter):
     """
     Facility-specific code is handled by the implementation of this interface.
@@ -18,7 +20,9 @@ class FacilityAdapter(AuthenticatedAdapter):
     """
 
     @abstractmethod
-    async def get_task(self: "FacilityAdapter", user: User, task_id: str) -> task_models.Task | None:
+    async def get_task(
+        self: "FacilityAdapter", user: User, task_id: str
+    ) -> task_models.Task | None:
         pass
 
     @abstractmethod
@@ -26,7 +30,12 @@ class FacilityAdapter(AuthenticatedAdapter):
         pass
 
     @abstractmethod
-    async def put_task(self: "FacilityAdapter", user: User, resource: status_models.Resource | None, task: task_models.TaskCommand) -> task_models.TaskSubmitResponse:
+    async def put_task(
+        self: "FacilityAdapter",
+        user: User,
+        resource: status_models.Resource | None,
+        task: task_models.TaskCommand,
+    ) -> task_models.TaskSubmitResponse:
         pass
 
     @abstractmethod
@@ -34,7 +43,9 @@ class FacilityAdapter(AuthenticatedAdapter):
         pass
 
     @staticmethod
-    async def on_task(resource: status_models.Resource, user: User, task: task_models.TaskCommand) -> tuple[dict, task_models.TaskStatus]:
+    async def on_task(
+        resource: status_models.Resource, user: User, task: task_models.TaskCommand
+    ) -> tuple[dict, task_models.TaskStatus]:
         # Handle a task from the facility message queue.
         # Returns: (result, status)
         def _extractNull(ind):
@@ -43,14 +54,18 @@ class FacilityAdapter(AuthenticatedAdapter):
             else:
                 data = ind
             return {k: v for k, v in data.items() if v is not None}
+
         try:
             r = None
             logger.info(f"Received task: {task.router}:{task.command} with args: {task.args}")
             if task.router == "filesystem":
-                fs_adapter = IriRouter.create_adapter(task.router, filesystem_adapter.FacilityAdapter)
+                fs_adapter = IriRouter.create_adapter(
+                    task.router, filesystem_adapter.FacilityAdapter
+                )
                 if task.command == "chmod":
                     data = _extractNull(task.args["request_model"])
                     request_model = filesystem_models.PutFileChmodRequest.model_validate(data)
+                    print("calling chmode here.")
                     r = await fs_adapter.chmod(resource, user, request_model)
                 elif task.command == "chown":
                     data = _extractNull(task.args["request_model"])
@@ -63,7 +78,12 @@ class FacilityAdapter(AuthenticatedAdapter):
                 elif task.command == "mkdir":
                     data = _extractNull(task.args["request_model"])
                     request_model = filesystem_models.PostMakeDirRequest.model_validate(data)
-                    r = await fs_adapter.mkdir(resource, user, request_model)
+                    r = await fs_adapter.mkdir(
+                        resource,
+                        user,
+                        request_model,
+                        transfer_token=task.args.get("transfer_token"),
+                    )
                 elif task.command == "symlink":
                     data = _extractNull(task.args["request_model"])
                     request_model = filesystem_models.PostFileSymlinkRequest.model_validate(data)
@@ -91,7 +111,12 @@ class FacilityAdapter(AuthenticatedAdapter):
                 elif task.command == "mv":
                     data = _extractNull(task.args["request_model"])
                     request_model = filesystem_models.PostMoveRequest.model_validate(data)
-                    r = await fs_adapter.mv(resource, user, request_model)
+                    r = await fs_adapter.mv(
+                        resource,
+                        user,
+                        request_model,
+                        transfer_token=task.args.get("transfer_token"),
+                    )
                 elif task.command == "cp":
                     data = _extractNull(task.args["request_model"])
                     request_model = filesystem_models.PostCopyRequest.model_validate(data)
@@ -100,12 +125,52 @@ class FacilityAdapter(AuthenticatedAdapter):
                     r = await fs_adapter.download(resource, user, **task.args)
                 elif task.command == "upload":
                     r = await fs_adapter.upload(resource, user, **task.args)
+                elif task.command == "transfer":
+                    req_data = _extractNull(task.args["request_model"])
+                    request_model = filesystem_models.PostCopyRequest.model_validate(req_data)
+                    dest_data = _extractNull(task.args.get("dest_resource"))
+                    if isinstance(dest_data, dict):
+                        if "site_id" not in dest_data or not dest_data["site_id"]:
+                            if "site_uri" in dest_data and dest_data["site_uri"]:
+                                dest_data["site_id"] = dest_data["site_uri"].rstrip("/").split("/")[-1]
+                            else:
+                                dest_data["site_id"] = "unknown"
+                        if "last_modified" in dest_data:
+                            lm = dest_data["last_modified"]
+                            if isinstance(lm, str):
+                                v = lm.strip()
+                                if v.endswith("Z"):
+                                    v = v[:-1] + "+00:00"
+                                try:
+                                    dest_data["last_modified"] = datetime.datetime.fromisoformat(v)
+                                except Exception:
+                                    pass
+                    dest_resource = status_models.Resource.model_validate(dest_data)
+                    transfer_token = task.args.get("transfer_token")
+                    r = await fs_adapter.transfer(
+                        resource,
+                        user,
+                        dest_resource=dest_resource,
+                        request_model=request_model,
+                        transfer_token=transfer_token,
+                    )
             if r is not None:
                 return (r, task_models.TaskStatus.completed)
             else:
-                return ({"output": f"Task was cancelled due to unknown router/command: {task.router}:{task.command}"}, task_models.TaskStatus.failed)
+                return (
+                    {
+                        "output": f"Task was cancelled due to unknown router/command: {task.router}:{task.command}"
+                    },
+                    task_models.TaskStatus.failed,
+                )
         except Exception as exc:
+            if type(exc).__name__ == "HTTPException" and getattr(exc, "status_code", None) == 501:
+                detail = getattr(exc, "detail", str(exc))
+                logger.info(f"Task {task.router}:{task.command} not implemented: {detail}")
+                return ({"output": f"Error: {detail}"}, task_models.TaskStatus.failed)
             traceback_str = traceback.format_exc()
-            logger.warning(f"Error handling task {task.router}:{task.command} with args: {task.args}\nError: {exc}")
+            logger.warning(
+                f"Error handling task {task.router}:{task.command} with args: {task.args}\nError: {exc}"
+            )
             logger.debug(f"Traceback:\n{traceback_str}")
             return ({"output": f"Error: {exc}"}, task_models.TaskStatus.failed)

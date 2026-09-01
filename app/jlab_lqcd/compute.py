@@ -1,9 +1,6 @@
 """Compute and job management API functions for JLab LQCD adapter."""
 
-from app import apilogger
-from app.jlab_lqcd import account
 import datetime
-import random
 
 from ..routers.compute import models as compute_models
 from ..routers.status import models as status_models
@@ -14,6 +11,7 @@ from ..config import LOG_LEVEL
 from . import slurm
 
 logger = get_stream_logger(__name__, LOG_LEVEL)
+
 
 def utc_timestamp() -> int:
     """Return current UTC datetime timestamp as integer."""
@@ -56,21 +54,24 @@ async def get_job(
     include_spec: bool = False,
 ) -> compute_models.Job:
     """Query a specific job's status."""
-    
+
     try:
-        job_status, my_job_spec = await slurm.get_job_status(user.name, job_id, historical, include_spec)
+        job_status, my_job_spec = await slurm.get_job_status(
+            user.name, job_id, historical, include_spec
+        )
     except ValueError as e:
         # Failed to get job status
         return slurm._make_failed_job(f"Failed to get job status: {str(e)}")
     except Exception as e:
         logger.error(f"Failed to get job status: {e}")
         return slurm._make_failed_job(f"Failed to get job status: {str(e)}")
-    
+
     return compute_models.Job(
         id=job_id,
         status=job_status,
         job_spec=my_job_spec,
     )
+
 
 async def get_jobs(
     adapter,
@@ -91,6 +92,6 @@ async def cancel_job(
     resource: status_models.Resource,
     user: User,
     job_id: str,
-) -> tuple[bool,str]:
+) -> tuple[bool, str]:
     """Cancel a running or pending job."""
     return await slurm.cancel_job(job_id, user.name)

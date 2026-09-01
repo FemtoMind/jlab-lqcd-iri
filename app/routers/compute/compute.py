@@ -1,6 +1,5 @@
 """Compute resource API router"""
 
-from fastapi import Response
 from fastapi import Depends, Query, Request, status
 
 from ...types.http import forbidExtraQueryParams
@@ -36,7 +35,12 @@ async def get_resources(
 
 
 @router.post(
-    "/job/{resource_id:str}", response_model=models.Job, response_model_exclude_unset=True, responses=DEFAULT_RESPONSES, operation_id="launchJob", openapi_extra=iri_meta_dict("production", "required")
+    "/job/{resource_id:str}",
+    response_model=models.Job,
+    response_model_exclude_unset=True,
+    responses=DEFAULT_RESPONSES,
+    operation_id="launchJob",
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def submit_job(
     resource_id: str,
@@ -104,7 +108,9 @@ async def update_job(
 
     # the handler can use whatever means it wants to submit the job and then fill in its id
     # see: https://exaworks.org/psij-python/docs/v/0.9.11/user_guide.html#submitting-jobs
-    return await router.adapter.update_job(resource=resource, user=user, job_spec=job_spec, job_id=job_id)
+    return await router.adapter.update_job(
+        resource=resource, user=user, job_spec=job_spec, job_id=job_id
+    )
 
 
 @router.get(
@@ -120,8 +126,12 @@ async def get_job_status(
     job_id: str,
     request: Request,
     user: User = Depends(router.current_user),
-    historical: StrictHTTPBool | None = Query(default=True, description="Whether to include historical jobs. Defaults to true"),
-    include_spec: StrictHTTPBool | None = Query(default=False, description="Whether to include the job specification. Defaults to false"),
+    historical: StrictHTTPBool | None = Query(
+        default=True, description="Whether to include historical jobs. Defaults to true"
+    ),
+    include_spec: StrictHTTPBool | None = Query(
+        default=False, description="Whether to include the job specification. Defaults to false"
+    ),
     _forbid=Depends(forbidExtraQueryParams("historical", "include_spec")),
 ):
     """Get a job's status"""
@@ -129,7 +139,13 @@ async def get_job_status(
     # This could be done via slurm (in the adapter) or via psij's "attach" (https://exaworks.org/psij-python/docs/v/0.9.11/user_guide.html#detaching-and-attaching-jobs)
     resource = await status_router.adapter.get_resource(resource_id)
 
-    job = await router.adapter.get_job(resource=resource, user=user, job_id=job_id, historical=historical, include_spec=include_spec)
+    job = await router.adapter.get_job(
+        resource=resource,
+        user=user,
+        job_id=job_id,
+        historical=historical,
+        include_spec=include_spec,
+    )
 
     return job
 
@@ -149,16 +165,30 @@ async def get_job_statuses(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=0, le=1000),
     filters: dict[str, object] | None = None,
-    historical: StrictHTTPBool | None = Query(default=False, description="Whether to include historical jobs. Defaults to false"),
-    include_spec: StrictHTTPBool | None = Query(default=False, description="Whether to include the job specification. Defaults to false"),
-    _forbid=Depends(forbidExtraQueryParams("offset", "limit", "filters", "historical", "include_spec")),
+    historical: StrictHTTPBool | None = Query(
+        default=False, description="Whether to include historical jobs. Defaults to false"
+    ),
+    include_spec: StrictHTTPBool | None = Query(
+        default=False, description="Whether to include the job specification. Defaults to false"
+    ),
+    _forbid=Depends(
+        forbidExtraQueryParams("offset", "limit", "filters", "historical", "include_spec")
+    ),
 ):
     """Get multiple jobs' statuses"""
     # look up the resource (todo: maybe ensure it's available)
     # This could be done via slurm (in the adapter) or via psij's "attach" (https://exaworks.org/psij-python/docs/v/0.9.11/user_guide.html#detaching-and-attaching-jobs)
     resource = await status_router.adapter.get_resource(resource_id)
 
-    jobs = await router.adapter.get_jobs(resource=resource, user=user, offset=offset, limit=limit, filters=filters, historical=historical, include_spec=include_spec)
+    jobs = await router.adapter.get_jobs(
+        resource=resource,
+        user=user,
+        offset=offset,
+        limit=limit,
+        filters=filters,
+        historical=historical,
+        include_spec=include_spec,
+    )
 
     return jobs
 

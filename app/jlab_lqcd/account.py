@@ -33,6 +33,8 @@ async def get_projects(adapter, user: User) -> list[account_models.Project]:
             description="",
         )
         iri_projects.append(iri_project)
+
+    adapter.projects = iri_projects
     return iri_projects
 
 
@@ -66,15 +68,13 @@ async def get_project_allocations(
     if user.id not in f_slurm_project.users:
         raise ValueError(f"User {user.id} is not in project {project.name}")
 
-    allocations: list[account_models.AllocationEntry] = (
-        await slurm.get_project_allocation(project.name)
+    allocations: list[account_models.AllocationEntry] = await slurm.get_project_allocation(
+        project.name
     )
 
     # Jlab lqcd project has one allocation entry
     if len(allocations) != 1:
-        raise ValueError(
-            f"Project {project.name} has {len(allocations)} allocation entries."
-        )
+        raise ValueError(f"Project {project.name} has {len(allocations)} allocation entries.")
 
     # We don't have a good way to map each lqcd project to a Capability,
     # and the capability names are not well organized in JLab Slurm.
@@ -85,13 +85,11 @@ async def get_project_allocations(
     else:
         capability_id = adapter.capabilities["cpu"].id
 
-    project_allocation: account_models.ProjectAllocation = (
-        account_models.ProjectAllocation(
-            id=jlab_unique_id("project_allocation", project.name),
-            project_id=project.id,
-            capability_id=capability_id,
-            entries=allocations,
-        )
+    project_allocation: account_models.ProjectAllocation = account_models.ProjectAllocation(
+        id=jlab_unique_id("project_allocation", project.name),
+        project_id=project.id,
+        capability_id=capability_id,
+        entries=allocations,
     )
     pa.append(project_allocation)
 
@@ -123,9 +121,7 @@ async def get_user_allocations(
     for sp in slurm_projects:
         if user.id in sp.users:
             if project_allocation.project_id == jlab_unique_id("project", sp.name):
-                allocations: list[account_models.AllocationEntry] = (
-                    project_allocation.entries
-                )
+                allocations: list[account_models.AllocationEntry] = project_allocation.entries
 
                 ua.append(
                     account_models.UserAllocation(

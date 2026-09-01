@@ -4,15 +4,10 @@ This is useful for testing and development of the API without needing to connect
 """
 
 from pydantic import HttpUrl
-import base64
+import asyncio
 import datetime
-import glob
-import grp
 import os
-import pathlib
-import pwd
 import random
-import stat
 import subprocess
 import sys
 
@@ -44,8 +39,8 @@ from .types.user import User
 from .types.scalars import AllocationUnit
 from .apilogger import get_stream_logger
 from .config import LOG_LEVEL
-from .utils import demo_uuid
-from .jlab_lqcd import account, compute, slurm, lqcdweb
+from .utils import demo_uuid, PathSandbox
+from .jlab_lqcd import account, compute, slurm, lqcdweb, filesystem
 
 logger = get_stream_logger(__name__, LOG_LEVEL)
 
@@ -71,28 +66,6 @@ class CommandError(RuntimeError):
         self.stderr = stderr
 
         super().__init__(f"Command failed: {cmd} (rc={returncode})")
-
-
-class PathSandbox:
-    """A simple sandbox for file operations."""
-
-    _base_temp_dir = None
-
-    @classmethod
-    def get_base_temp_dir(cls):
-        """Get the base temporary directory for the sandbox."""
-        if cls._base_temp_dir is None:
-            # Create in system temp with a fixed name
-            cls._base_temp_dir = os.path.join(os.getcwd(), "iri_sandbox")
-            os.makedirs(cls._base_temp_dir, exist_ok=True)
-
-            # create a test file
-            with open(
-                f"{cls._base_temp_dir}/test.txt", encoding="utf-8", mode="w"
-            ) as f:
-                f.write("hello world")
-            logger.info(f"Created test file in sandbox: {cls._base_temp_dir}/test.txt")
-        return cls._base_temp_dir
 
 
 def utc_now() -> datetime.datetime:
@@ -121,9 +94,7 @@ class JlabLQCDImpl(
         self.incidents = []
         self.events = []
         self.capabilities = {}
-        self.user = User(
-            id="gtorok", name="Gabor Torok", api_key="12345", client_ip="1.2.3.4"
-        )
+        self.user = User(id="gtorok", name="Gabor Torok", api_key="12345", client_ip="1.2.3.4")
         self.projects = []
         self.project_allocations = []
         self.user_allocations = []
@@ -197,45 +168,35 @@ class JlabLQCDImpl(
                 name="CPU Nodes",
                 description="24s CPU cluster",
                 units=[AllocationUnit.node_hours],
-                last_modified=datetime.datetime(
-                    2024, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
-                ),
+                last_modified=datetime.datetime(2024, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "gpu": Capability(
                 id=demo_uuid("capability", "gpu"),
                 name="GPU Nodes",
                 description="21g GPU cluster",
                 units=[AllocationUnit.node_hours],
-                last_modified=datetime.datetime(
-                    2021, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
-                ),
+                last_modified=datetime.datetime(2021, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "cache": Capability(
                 id=demo_uuid("capability", "cache"),
                 name="LUSTRE Cache Storage",
                 description="LUSTRE Cache Storage backed by a tape library",
                 units=[AllocationUnit.bytes],
-                last_modified=datetime.datetime(
-                    2025, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
-                ),
+                last_modified=datetime.datetime(2025, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "volatile": Capability(
                 id=demo_uuid("capability", "volatile"),
                 name="Lustre Volatile Storage",
                 description="Lustre Volatile Storage cleaned up to 6-month inactive files",
                 units=[AllocationUnit.bytes],
-                last_modified=datetime.datetime(
-                    2025, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
-                ),
+                last_modified=datetime.datetime(2025, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "workdisk": Capability(
                 id=demo_uuid("capability", "workdisk"),
                 name="NFS Workdisk Storage",
                 description="NFS Workdisk Storage",
                 units=[AllocationUnit.bytes],
-                last_modified=datetime.datetime(
-                    2025, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
-                ),
+                last_modified=datetime.datetime(2025, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc),
             ),
             "home": Capability(
                 id=demo_uuid("capability", "home"),
@@ -263,7 +224,6 @@ class JlabLQCDImpl(
             resource_type=status_models.ResourceType.compute,
             supported_endpoints=[
                 status_models.Endpoint.compute,
-                status_models.Endpoint.filesystem,
             ],
         )
 
@@ -306,20 +266,34 @@ class JlabLQCDImpl(
             supported_endpoints=[status_models.Endpoint.filesystem],
         )
 
-        home = status_models.Resource(
-            id=demo_uuid("resource", "home"),
+        nersc_home = status_models.Resource(
+            id=demo_uuid("resource", "nersc_home"),
             site_id=site1.id,
             group="jlab-lqcd",
-            name="home",
-            description="home storage",
+            name="nersc_home",
+            description="nersc home storage",
             capability_ids=[self.capabilities["home"].id],
-            current_status=status_models.Status.degraded,
+            current_status=status_models.Status.up,
             last_modified=day_ago,
             resource_type=status_models.ResourceType.storage,
             supported_endpoints=[status_models.Endpoint.filesystem],
         )
 
-        self.resources = [jlab_lqcd_cluster, cache, workdisk, volatile, home]
+        # home = status_models.Resource(
+        #    id=demo_uuid("resource", "home"),
+        #    site_id=site1.id,
+        #    group="jlab-lqcd",
+        #    name="home",
+        #    description="home storage",
+        #    capability_ids=[self.capabilities["home"].id],
+        #    current_status=status_models.Status.degraded,
+        #    last_modified=day_ago,
+        #    resource_type=status_models.ResourceType.storage,
+        #    supported_endpoints=[status_models.Endpoint.filesystem],
+        # )
+
+        # self.resources = [jlab_lqcd_cluster, cache, workdisk, volatile, home]
+        self.resources = [jlab_lqcd_cluster, cache, workdisk, volatile, nersc_home]
 
         _rw = storage_models.AccessPermissions(read=True, write=True, execute=True)
         _ro = storage_models.AccessPermissions(read=True, write=False, execute=True)
@@ -333,17 +307,6 @@ class JlabLQCDImpl(
         # Perlmutter compute nodes: in-job semantics. Home is read-only inside a job;
         # archive (HPSS) is not accessible from compute, so it isn't mounted here at all.
         self.locations[jlab_lqcd_cluster.id] = [
-            storage_models.StorageInstance(
-                logical_name=storage_models.LogicalName.home,
-                path="/home/{user}",
-                access=_rw,
-                filesystem="/home",
-                performance_tier="medium",
-                quota_bytes=40 * 1024**3,
-                available_bytes=28 * 1024**3,
-                purge_policy_days=None,
-                shared=False,
-            ),
             storage_models.StorageInstance(
                 logical_name=storage_models.LogicalName.scratch,
                 path="/qcd/volatile/users/{user}",
@@ -371,6 +334,17 @@ class JlabLQCDImpl(
                 path="/qcd/cache/{project}",
                 access=_rw,
                 filesystem="/qcd/cache",
+                performance_tier="medium",
+                quota_bytes=10 * 1024**4,
+                available_bytes=8 * 1024**4,
+                purge_policy_days=90,
+                shared=True,
+            ),
+            storage_models.StorageInstance(
+                logical_name=storage_models.LogicalName.home,
+                path="/global/homes/j/{user}",
+                access=_rw,
+                filesystem="/global/homes",
                 performance_tier="medium",
                 quota_bytes=10 * 1024**4,
                 available_bytes=8 * 1024**4,
@@ -522,9 +496,7 @@ class JlabLQCDImpl(
         )
         return paginate_list(resources, offset, limit)
 
-    async def get_resource(
-        self: "JlabLQCDImpl", id_: str
-    ) -> status_models.Resource | None:
+    async def get_resource(self: "JlabLQCDImpl", id_: str) -> status_models.Resource | None:
         return status_models.Resource.find_by_id(self.resources, id_)
 
     async def get_resources_for_endpoint(
@@ -617,9 +589,7 @@ class JlabLQCDImpl(
         )
         return paginate_list(incidents, offset, limit)
 
-    async def get_incident(
-        self: "JlabLQCDImpl", id_: str
-    ) -> status_models.Incident | None:
+    async def get_incident(self: "JlabLQCDImpl", id_: str) -> status_models.Incident | None:
         return status_models.Incident.find_by_id(self.incidents, id_)
 
     async def get_capabilities(
@@ -661,9 +631,7 @@ class JlabLQCDImpl(
 
                 valid, user_info = validate_authorized_token(token)
                 if not valid or not user_info:
-                    raise HTTPException(
-                        status_code=401, detail="OIDC token validation failed"
-                    )
+                    raise HTTPException(status_code=401, detail="OIDC token validation failed")
 
                 user_login = (
                     user_info.get("email")
@@ -684,9 +652,7 @@ class JlabLQCDImpl(
                 if isinstance(e, HTTPException):
                     raise e
                 logger.exception("OIDC authentication failed:")
-                raise HTTPException(
-                    status_code=401, detail=f"OIDC authentication failed: {str(e)}"
-                )
+                raise HTTPException(status_code=401, detail=f"OIDC authentication failed: {str(e)}")
 
         # Standalone/Demo fallback
         if api_key != self.user.api_key:
@@ -724,9 +690,7 @@ class JlabLQCDImpl(
             except Exception as e:
                 if isinstance(e, HTTPException):
                     raise e
-                raise HTTPException(
-                    status_code=401, detail=f"Globus OIDC mapping failed: {str(e)}"
-                )
+                raise HTTPException(status_code=401, detail=f"Globus OIDC mapping failed: {str(e)}")
 
         return "gtorok"
 
@@ -750,9 +714,7 @@ class JlabLQCDImpl(
             raise HTTPException(status_code=403, detail="User not found")
         return self.user
 
-    async def get_projects(
-        self: "JlabLQCDImpl", user: User
-    ) -> list[account_models.Project]:
+    async def get_projects(self: "JlabLQCDImpl", user: User) -> list[account_models.Project]:
         return await account.get_projects(self, user)
 
     async def get_project_allocations(
@@ -801,9 +763,7 @@ class JlabLQCDImpl(
         historical: bool = False,
         include_spec: bool = False,
     ) -> compute_models.Job:
-        return await compute.get_job(
-            self, resource, user, job_id, historical, include_spec
-        )
+        return await compute.get_job(self, resource, user, job_id, historical, include_spec)
 
     async def get_jobs(
         self: "JlabLQCDImpl",
@@ -905,9 +865,7 @@ class JlabLQCDImpl(
             )
 
         # Expand project-scoped paths across ALL of the user's projects when none specified
-        project_codes = (
-            [effective_project] if effective_project else self._user_project_codes(user)
-        )
+        project_codes = [effective_project] if effective_project else self._user_project_codes(user)
 
         result = []
         for m in templates:
@@ -948,9 +906,7 @@ class JlabLQCDImpl(
         if not allow_symlinks and os.path.islink(os.path.join(basedir, path)):
             link_target = os.readlink(os.path.join(basedir, path))
             if os.path.isabs(link_target):
-                raise HTTPException(
-                    status_code=400, detail=f"Absolute symlink not allowed: {path}"
-                )
+                raise HTTPException(status_code=400, detail=f"Absolute symlink not allowed: {path}")
 
         return real_path
 
@@ -995,58 +951,7 @@ class JlabLQCDImpl(
             ) from exc
         except OSError as exc:
             logger.warning(f"OS error running command: {args}\nError: {exc}")
-            raise CommandError(
-                cmd=args, returncode=None, stdout=None, stderr=str(exc)
-            ) from exc
-
-    def _file(self, path: str) -> filesystem_models.File:
-        # Get file stats (follows symlinks by default)
-        rp = self.validate_path(path)
-        file_stat = os.stat(rp)  # Use lstat to not follow symlinks
-
-        # Get file type
-        if stat.S_ISDIR(file_stat.st_mode):
-            file_type = "directory"
-        elif stat.S_ISLNK(file_stat.st_mode):
-            file_type = "symlink"
-        elif stat.S_ISREG(file_stat.st_mode):
-            file_type = "file"
-        else:
-            file_type = "other"
-
-        # Get link target if it's a symlink
-        link_target = None
-        if stat.S_ISLNK(file_stat.st_mode):
-            link_target = os.readlink(rp)
-
-        # Get user and group names
-        user = pwd.getpwuid(file_stat.st_uid).pw_name
-        group = grp.getgrgid(file_stat.st_gid).gr_name
-
-        # Get permissions in rwxrwxrwx format
-        permissions = stat.filemode(file_stat.st_mode)
-
-        # Get last modified time
-        last_modified = datetime.datetime.fromtimestamp(file_stat.st_mtime).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-
-        # Get size
-        size = str(file_stat.st_size)
-        data = dict(
-            name=os.path.basename(rp),
-            type=file_type,
-            user=user,
-            group=group,
-            permissions=permissions,
-            last_modified=last_modified,
-            size=size,
-        )
-
-        if link_target is not None:
-            data["link_target"] = link_target
-
-        return filesystem_models.File(**data)
+            raise CommandError(cmd=args, returncode=None, stdout=None, stderr=str(exc)) from exc
 
     async def chmod(
         self: "JlabLQCDImpl",
@@ -1054,12 +959,8 @@ class JlabLQCDImpl(
         user: User,
         request_model: filesystem_models.PutFileChmodRequest,
     ) -> filesystem_models.PutFileChmodResponse:
-        if request_model.path is None:
-            raise HTTPException(status_code=400, detail="Path is required")
-
-        rp = self.validate_path(request_model.path)
-        os.chmod(rp, int(request_model.mode, 8))
-        return filesystem_models.PutFileChmodResponse(output=self._file(rp))
+        print("chmod is called")
+        return await filesystem.chmod(self, resource, user, request_model)
 
     async def chown(
         self: "JlabLQCDImpl",
@@ -1067,28 +968,7 @@ class JlabLQCDImpl(
         user: User,
         request_model: filesystem_models.PutFileChownRequest,
     ) -> filesystem_models.PutFileChownResponse:
-        if request_model.path is None:
-            raise HTTPException(status_code=400, detail="Path is required")
-        rp = self.validate_path(request_model.path)
-        if request_model.owner is None:
-            raise HTTPException(status_code=400, detail="Owner is required")
-        if request_model.group is None:
-            raise HTTPException(status_code=400, detail="Group is required")
-        try:
-            uid = pwd.getpwnam(request_model.owner).pw_uid
-        except KeyError as e:
-            raise HTTPException(
-                status_code=400, detail=f"Owner not found: {request_model.owner}"
-            ) from e
-        try:
-            gid = grp.getgrnam(request_model.group).gr_gid
-        except KeyError as e:
-            raise HTTPException(
-                status_code=400, detail=f"Group not found: {request_model.group}"
-            ) from e
-
-        os.chown(rp, uid, gid)
-        return filesystem_models.PutFileChownResponse(output=self._file(rp))
+        return await filesystem.chown(self, resource, user, request_model)
 
     async def ls(
         self: "JlabLQCDImpl",
@@ -1099,45 +979,19 @@ class JlabLQCDImpl(
         numeric_uid: bool,
         recursive: bool,
         dereference: bool,
+        transfer_token: str | None = None,
     ) -> filesystem_models.GetDirectoryLsResponse:
-        rp = self.validate_path(path)
-        files = glob.glob(rp, recursive=recursive)
-        return filesystem_models.GetDirectoryLsResponse(
-            output=[self._file(f) for f in files]
+        return await filesystem.ls(
+            self,
+            resource,
+            user,
+            path,
+            show_hidden,
+            numeric_uid,
+            recursive,
+            dereference,
+            transfer_token,
         )
-
-    def _headtail(
-        self: "JlabLQCDImpl",
-        cmd: str,
-        path: str,
-        file_bytes: int | None,
-        lines: int | None,
-        skip_heading: bool = False,
-        skip_trailing: bool = False,
-    ) -> str:
-        args = [cmd]
-
-        if cmd == "tail" and skip_heading:
-            if file_bytes is not None:
-                args.extend(["-c", f"+{file_bytes + 1}"])
-            elif lines is not None:
-                args.extend(["-n", f"+{lines + 1}"])
-        if cmd == "head" and skip_trailing:
-            if file_bytes is not None:
-                args.extend(["-c", f"-{file_bytes}"])
-            elif lines is not None:
-                args.extend(["-n", f"-{lines}"])
-        else:
-            if file_bytes is not None:
-                args.extend(["-c", str(file_bytes)])
-            elif lines is not None:
-                args.extend(["-n", str(lines)])
-
-        rp = self.validate_path(path)
-        args.append(rp)
-
-        result = self._run(args)
-        return result.stdout
 
     async def head(
         self: "JlabLQCDImpl",
@@ -1148,22 +1002,15 @@ class JlabLQCDImpl(
         lines: int | None,
         skip_trailing: bool = False,
     ) -> filesystem_models.GetFileHeadResponse:
-        content = self._headtail(
-            "head", path, file_bytes, lines, skip_trailing=skip_trailing
+        return await filesystem.head(
+            self,
+            resource,
+            user,
+            path,
+            file_bytes,
+            lines,
+            skip_trailing,
         )
-
-        fc = filesystem_models.FileContent(
-            content=content,
-            content_type=(
-                filesystem_models.ContentUnit.bytes
-                if file_bytes is not None
-                else filesystem_models.ContentUnit.lines
-            ),
-            start_position=0,
-            end_position=len(content),
-        )
-
-        return filesystem_models.GetFileHeadResponse(output=fc)
 
     async def tail(
         self: "JlabLQCDImpl",
@@ -1174,23 +1021,15 @@ class JlabLQCDImpl(
         lines: int | None,
         skip_heading: bool = False,
     ) -> filesystem_models.GetFileTailResponse:
-
-        content = self._headtail(
-            "tail", path, file_bytes, lines, skip_heading=skip_heading
+        return await filesystem.tail(
+            self,
+            resource,
+            user,
+            path,
+            file_bytes,
+            lines,
+            skip_heading,
         )
-
-        fc = filesystem_models.FileContent(
-            content=content,
-            content_type=(
-                filesystem_models.ContentUnit.bytes
-                if file_bytes is not None
-                else filesystem_models.ContentUnit.lines
-            ),
-            start_position=0,
-            end_position=len(content),
-        )
-
-        return filesystem_models.GetFileTailResponse(output=fc)
 
     async def view(
         self: "JlabLQCDImpl",
@@ -1200,38 +1039,18 @@ class JlabLQCDImpl(
         size: int,
         offset: int,
     ) -> filesystem_models.GetViewFileResponse:
-        rp = self.validate_path(path)
-        result = self._run(f"tail -c +{offset + 1} {rp} | head -c {size}", shell=True)
-        content = result.stdout
-        return filesystem_models.GetViewFileResponse(
-            output=filesystem_models.FileContent(
-                content=content,
-                content_type=filesystem_models.ContentUnit.bytes,
-                start_position=offset,
-                end_position=offset + len(content),
-            ),
-        )
+        return await filesystem.view(self, resource, user, path, size, offset)
 
     async def checksum(
         self: "JlabLQCDImpl", resource: status_models.Resource, user: User, path: str
     ) -> filesystem_models.GetFileChecksumResponse:
-        rp = self.validate_path(path)
-        result = self._run(["sha256sum", rp])
-        checksum = result.stdout.split()[0]
-        return filesystem_models.GetFileChecksumResponse(
-            output=filesystem_models.FileChecksum(
-                checksum=checksum,
-            )
-        )
+        return await filesystem.checksum(self, resource, user, path)
 
     async def file(
-        self: "JlabLQCDImpl", resource: status_models.Resource, user: User, path: str
+        self: "JlabLQCDImpl", resource: status_models.Resource, user: User, path: str,
+        transfer_token: str | None = None,
     ) -> filesystem_models.GetFileTypeResponse:
-        rp = self.validate_path(path)
-        result = self._run(["file", "-b", rp])
-        return filesystem_models.GetFileTypeResponse(
-            output=result.stdout.strip(),
-        )
+        return await filesystem.file(self, resource, user, path, transfer_token)
 
     async def stat(
         self: "JlabLQCDImpl",
@@ -1239,54 +1058,27 @@ class JlabLQCDImpl(
         user: User,
         path: str,
         dereference: bool,
+        transfer_token: str | None = None,
     ) -> filesystem_models.GetFileStatResponse:
-        rp = self.validate_path(path)
-        if dereference:
-            stat_info = os.stat(rp)
-        else:
-            stat_info = os.lstat(rp)
-        return filesystem_models.GetFileStatResponse(
-            output=filesystem_models.FileStat(
-                mode=stat_info.st_mode,
-                ino=stat_info.st_ino,
-                dev=stat_info.st_dev,
-                nlink=stat_info.st_nlink,
-                uid=stat_info.st_uid,
-                gid=stat_info.st_gid,
-                size=stat_info.st_size,
-                atime=int(stat_info.st_atime),
-                ctime=int(stat_info.st_ctime),
-                mtime=int(stat_info.st_mtime),
-            )
-        )
+        return await filesystem.stat(self, resource, user, path, dereference, transfer_token)
 
     async def rm(
         self: "JlabLQCDImpl",
         resource: status_models.Resource,
         user: User,
         path: str,
+        transfer_token: str | None = None,
     ) -> filesystem_models.RemoveResponse:
-        rp = self.validate_path(path)
-        if rp == PathSandbox.get_base_temp_dir():
-            raise HTTPException(status_code=400, detail="Cannot delete sandbox")
-        self._run(["rm", "-rf", rp])
-        return filesystem_models.RemoveResponse(output=f"Removed {rp}")
+        return await filesystem.rm(self, resource, user, path, transfer_token)
 
     async def mkdir(
         self: "JlabLQCDImpl",
         resource: status_models.Resource,
         user: User,
         request_model: filesystem_models.PostMakeDirRequest,
+        transfer_token: str | None = None,
     ) -> filesystem_models.PostMkdirResponse:
-        if request_model.path is None:
-            raise HTTPException(status_code=400, detail="Path is required")
-        rp = self.validate_path(request_model.path)
-        args = ["mkdir"]
-        if request_model.parent:
-            args.append("-p")
-        args.append(rp)
-        self._run(args)
-        return filesystem_models.PostMkdirResponse(output=self._file(rp))
+        return await filesystem.mkdir(self, resource, user, request_model, transfer_token)
 
     async def symlink(
         self: "JlabLQCDImpl",
@@ -1294,25 +1086,13 @@ class JlabLQCDImpl(
         user: User,
         request_model: filesystem_models.PostFileSymlinkRequest,
     ) -> filesystem_models.PostFileSymlinkResponse:
-        if request_model.path is None:
-            raise HTTPException(status_code=400, detail="Path is required")
-        rp_src = self.validate_path(request_model.path)
-        rp_dst = self.validate_path(request_model.link_path)
-        self._run(["ln", "-s", rp_src, rp_dst])
-        return filesystem_models.PostFileSymlinkResponse(output=self._file(rp_dst))
+        return await filesystem.symlink(self, resource, user, request_model)
 
     async def download(
-        self: "JlabLQCDImpl", resource: status_models.Resource, user: User, path: str
+        self: "JlabLQCDImpl", resource: status_models.Resource, user: User, path: str,
+        transfer_token: str | None = None,
     ) -> filesystem_models.GetFileDownloadResponse:
-        rp = self.validate_path(path)
-        raw_content = pathlib.Path(rp).read_bytes()
-
-        if len(raw_content) > filesystem_adapter.OPS_SIZE_LIMIT:
-            raise Exception("File to download is too large.")
-
-        return filesystem_models.GetFileDownloadResponse(
-            output=base64.b64encode(raw_content).decode("utf-8"),
-        )
+        return await filesystem.download(self, resource, user, path, transfer_token)
 
     async def upload(
         self: "JlabLQCDImpl",
@@ -1320,17 +1100,9 @@ class JlabLQCDImpl(
         user: User,
         path: str,
         content: str,
+        transfer_token: str | None = None,
     ) -> filesystem_models.PutFileUploadResponse:
-        rp = self.validate_path(path)
-        if isinstance(content, bytes):
-            pathlib.Path(rp).write_bytes(content)
-        elif isinstance(content, str):
-            pathlib.Path(rp).write_bytes(base64.b64decode(content))
-        else:
-            raise Exception(
-                f"Don't know how to handle variable of type: {type(content)}"
-            )
-        return filesystem_models.PutFileUploadResponse(output=f"Uploaded to {rp}")
+        return await filesystem.upload(self, resource, user, path, content, transfer_token)
 
     async def compress(
         self: "JlabLQCDImpl",
@@ -1338,33 +1110,7 @@ class JlabLQCDImpl(
         user: User,
         request_model: filesystem_models.PostCompressRequest,
     ) -> filesystem_models.PostCompressResponse:
-        if request_model.path is None:
-            raise HTTPException(status_code=400, detail="Path is required")
-        if request_model.target_path is None:
-            raise HTTPException(status_code=400, detail="Target path is required")
-        src_rp = self.validate_path(request_model.path)
-        dst_rp = self.validate_path(request_model.target_path)
-
-        args = ["tar"]
-        if request_model.compression == filesystem_models.CompressionType.gzip:
-            args.append("-czf")
-        elif request_model.compression == filesystem_models.CompressionType.bzip2:
-            args.append("-cjf")
-        elif request_model.compression == filesystem_models.CompressionType.xz:
-            args.append("-cJf")
-        args.append(dst_rp)
-        if request_model.dereference:
-            args.append("--dereference")
-        if request_model.match_pattern:
-            args.append(f"--include={request_model.match_pattern}")
-
-        args.append("-C")
-        args.append(PathSandbox.get_base_temp_dir())
-        p = pathlib.Path(src_rp)
-        args.append(str(p.relative_to(PathSandbox.get_base_temp_dir())))
-        subprocess.run(args, check=True)
-
-        return filesystem_models.PostCompressResponse(output=self._file(dst_rp))
+        return await filesystem.compress(self, resource, user, request_model)
 
     async def extract(
         self: "JlabLQCDImpl",
@@ -1372,54 +1118,16 @@ class JlabLQCDImpl(
         user: User,
         request_model: filesystem_models.PostExtractRequest,
     ) -> filesystem_models.PostExtractResponse:
-        if request_model.path is None:
-            raise HTTPException(status_code=400, detail="Path is required")
-        if request_model.target_path is None:
-            raise HTTPException(status_code=400, detail="Target path is required")
-        src_rp = self.validate_path(request_model.path)
-        dst_rp = self.validate_path(request_model.target_path)
-
-        if os.path.exists(dst_rp):
-            if os.path.isdir(dst_rp):
-                raise Exception(
-                    f"Target path already exists: {request_model.target_path}"
-                )
-            else:
-                raise Exception(
-                    f"Target path already exists and is not a directory: {request_model.target_path}"
-                )
-        os.makedirs(dst_rp)
-
-        args = ["tar"]
-        if request_model.compression == filesystem_models.CompressionType.gzip:
-            args.append("-xzf")
-        elif request_model.compression == filesystem_models.CompressionType.bzip2:
-            args.append("-xjf")
-        elif request_model.compression == filesystem_models.CompressionType.xz:
-            args.append("-xJf")
-        else:
-            args.append("-xf")
-        args.append(src_rp)
-        args.append("-C")
-        args.append(dst_rp)
-        subprocess.run(args, check=True)
-
-        return filesystem_models.PostExtractResponse(output=self._file(dst_rp))
+        return await filesystem.extract(self, resource, user, request_model)
 
     async def mv(
         self: "JlabLQCDImpl",
         resource: status_models.Resource,
         user: User,
         request_model: filesystem_models.PostMoveRequest,
+        transfer_token: str | None = None,
     ) -> filesystem_models.PostMoveResponse:
-        if request_model.path is None:
-            raise HTTPException(status_code=400, detail="Path is required")
-        if request_model.target_path is None:
-            raise HTTPException(status_code=400, detail="Target path is required")
-        src_rp = self.validate_path(request_model.path)
-        dst_rp = self.validate_path(request_model.target_path)
-        self._run(["mv", src_rp, dst_rp])
-        return filesystem_models.PostMoveResponse(output=self._file(dst_rp))
+        return await filesystem.mv(self, resource, user, request_model, transfer_token)
 
     async def cp(
         self: "JlabLQCDImpl",
@@ -1427,36 +1135,29 @@ class JlabLQCDImpl(
         user: User,
         request_model: filesystem_models.PostCopyRequest,
     ) -> filesystem_models.PostCopyResponse:
-        if request_model.path is None:
-            raise HTTPException(status_code=400, detail="Path is required")
-        if request_model.target_path is None:
-            raise HTTPException(status_code=400, detail="Target path is required")
-        src_rp = self.validate_path(request_model.path)
-        dst_rp = self.validate_path(request_model.target_path)
-        args = ["cp"]
-        if request_model.dereference:
-            args.append("-L")
-        args.append(src_rp)
-        args.append(dst_rp)
-        subprocess.run(args, check=True)
-        return filesystem_models.PostCopyResponse(output=self._file(dst_rp))
+        return await filesystem.cp(self, resource, user, request_model)
 
-    async def get_task(
-        self: "JlabLQCDImpl", user: User, task_id: str
-    ) -> task_models.Task | None:
-        await DemoTaskQueue.process_tasks(self)
+
+    async def transfer(
+        self: "JlabLQCDImpl",
+        resource: status_models.Resource,
+        user: User,
+        dest_resource: status_models.Resource,
+        request_model: filesystem_models.PostCopyRequest,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.PostCopyResponse:
+        return await filesystem.transfer(self, resource, user, dest_resource, request_model, transfer_token)
+
+    async def get_task(self: "JlabLQCDImpl", user: User, task_id: str) -> task_models.Task | None:
+        await SimpleTaskQueue.process_tasks(self)
         return next(
-            (
-                t
-                for t in DemoTaskQueue.tasks
-                if t.user.name == user.name and t.id == task_id
-            ),
+            (t for t in SimpleTaskQueue.tasks if t.user.name == user.name and t.id == task_id),
             None,
         )
 
     async def get_tasks(self: "JlabLQCDImpl", user: User) -> list[task_models.Task]:
-        await DemoTaskQueue.process_tasks(self)
-        return [t for t in DemoTaskQueue.tasks if t.user.name == user.name]
+        await SimpleTaskQueue.process_tasks(self)
+        return [t for t in SimpleTaskQueue.tasks if t.user.name == user.name]
 
     async def put_task(
         self: "JlabLQCDImpl",
@@ -1464,19 +1165,20 @@ class JlabLQCDImpl(
         resource: status_models.Resource | None,
         task: task_models.TaskCommand,
     ) -> task_models.TaskSubmitResponse:
-        await DemoTaskQueue.process_tasks(self)
-        return DemoTaskQueue.create_task(user, resource, task)
+        result = SimpleTaskQueue.create_task(user, resource, task)
+        await SimpleTaskQueue.process_tasks(self)
+        return result
 
     async def delete_task(self: "JlabLQCDImpl", user: User, task_id: str) -> None:
-        await DemoTaskQueue.process_tasks(self)
-        for t in DemoTaskQueue.tasks:
+        await SimpleTaskQueue.process_tasks(self)
+        for t in SimpleTaskQueue.tasks:
             if t.user.name == user.name and t.id == task_id:
                 t.status = task_models.TaskStatus.canceled
                 t.result = None
                 break
 
 
-class DemoTask(BaseModel):
+class JlabLQCDTask(BaseModel):
     """A simple in-memory task queue for demonstration purposes."""
 
     id: str
@@ -1488,17 +1190,54 @@ class DemoTask(BaseModel):
     result: dict | None = None
 
 
-class DemoTaskQueue:
+class SimpleTaskQueue:
     """A simple in-memory task queue for demonstration purposes."""
 
     tasks = []
+    _background_task = None
+    _starting_task_id = 1234
+
+    @staticmethod
+    async def _run_loop(da: JlabLQCDImpl):
+        while True:
+            await asyncio.sleep(DEMO_QUEUE_UPDATE_SECS)
+            try:
+                await SimpleTaskQueue.process_tasks(da)
+            except Exception as e:
+                logger.error(f"Error in SimpleTaskQueue background loop: {e}", exc_info=True)
+
+    @staticmethod
+    async def _execute_task_in_background(task_item: JlabLQCDTask, cmd: task_models.TaskCommand):
+        try:
+            if task_item.resource is None:
+                raise ValueError("Resource is required to execute task")
+            (result, status) = await JlabLQCDImpl.on_task(task_item.resource, task_item.user, cmd)
+            if isinstance(result, BaseModel):
+                task_item.result = result.model_dump()
+            elif isinstance(result, dict):
+                task_item.result = result
+            else:
+                task_item.result = {"output": result}
+            task_item.status = status
+        except Exception as e:
+            logger.error(f"Error executing task {task_item.id}: {e}", exc_info=True)
+            task_item.status = task_models.TaskStatus.failed
+            task_item.result = {"error": str(e)}
 
     @staticmethod
     async def process_tasks(da: JlabLQCDImpl):
         """Process tasks in the queue, simulating task execution and completion."""
+        if SimpleTaskQueue._background_task is None:
+            try:
+                loop = asyncio.get_running_loop()
+                SimpleTaskQueue._background_task = loop.create_task(SimpleTaskQueue._run_loop(da))
+                logger.info("Started SimpleTaskQueue background loop")
+            except RuntimeError:
+                pass
+
         now = utc_timestamp()
         _tasks = []
-        for t in DemoTaskQueue.tasks:
+        for t in SimpleTaskQueue.tasks:
             if now - t.start > 5 * 60 and t.status in [
                 task_models.TaskStatus.completed,
                 task_models.TaskStatus.canceled,
@@ -1506,27 +1245,13 @@ class DemoTaskQueue:
             ]:
                 # delete old tasks
                 continue
-            if (
-                t.status == task_models.TaskStatus.pending
-                and now - t.start > DEMO_QUEUE_UPDATE_SECS
-            ):
+            if t.status == task_models.TaskStatus.pending:
                 t.status = task_models.TaskStatus.active
                 t.start = now
-            elif (
-                t.status == task_models.TaskStatus.active
-                and now - t.start > DEMO_QUEUE_UPDATE_SECS
-            ):
                 cmd = task_models.TaskCommand.model_validate_json(t.task)
-                (result, status) = await JlabLQCDImpl.on_task(t.resource, t.user, cmd)
-                if isinstance(result, BaseModel):
-                    t.result = result.model_dump()
-                elif isinstance(result, dict):
-                    t.result = result
-                else:
-                    t.result = {"output": result}
-                t.status = status
+                asyncio.create_task(SimpleTaskQueue._execute_task_in_background(t, cmd))
             _tasks.append(t)
-        DemoTaskQueue.tasks = _tasks
+        SimpleTaskQueue.tasks = _tasks
 
     @staticmethod
     def create_task(
@@ -1535,9 +1260,10 @@ class DemoTaskQueue:
         command: task_models.TaskCommand,
     ) -> task_models.TaskSubmitResponse:
         """Create a new task in the queue."""
-        task_id = f"task_{len(DemoTaskQueue.tasks)}"
-        DemoTaskQueue.tasks.append(
-            DemoTask(
+        task_id = f"{SimpleTaskQueue._starting_task_id}"
+        SimpleTaskQueue._starting_task_id += 1
+        SimpleTaskQueue.tasks.append(
+            JlabLQCDTask(
                 id=task_id,
                 task=command.model_dump_json(),
                 user=user,

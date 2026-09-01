@@ -1,6 +1,5 @@
 """Utilities for executing and parsing Slurm commands at Jefferson Lab."""
 
-from globus_sdk._internal import orjson_compat
 from app.utils import get_process_owner
 import datetime
 import asyncio
@@ -30,9 +29,7 @@ class SlurmCommandError(RuntimeError):
         super().__init__(f"Slurm command failed: {cmd} (rc={returncode})")
 
 
-async def run_slurm_command(
-    cmd: list[str], timeout: float = 30.0, stdin: str | None = None
-) -> str:
+async def run_slurm_command(cmd: list[str], timeout: float = 30.0, stdin: str | None = None) -> str:
     """Run an external command asynchronously and return its stdout.
 
     Raises SlurmCommandError if the command fails.
@@ -58,9 +55,7 @@ async def run_slurm_command(
                 await proc.wait()
             except Exception:
                 pass
-            logger.error(
-                "Command timed out after %s seconds: %s", timeout, " ".join(cmd)
-            )
+            logger.error("Command timed out after %s seconds: %s", timeout, " ".join(cmd))
             raise SlurmCommandError(
                 cmd=" ".join(cmd),
                 returncode=-1,
@@ -264,9 +259,7 @@ async def get_cluster_status() -> status_models.Status:
 
 
 # Convert compute_models.JobSpec to sbatch script
-def job_spec_to_sbatch(
-    job_spec: compute_models.JobSpec, account: str | None = None
-) -> str:
+def job_spec_to_sbatch(job_spec: compute_models.JobSpec, account: str | None = None) -> str:
     """Convert a JobSpec and resolved account into a complete sbatch script string."""
     lines = ["#!/bin/bash"]
 
@@ -290,9 +283,7 @@ def job_spec_to_sbatch(
         lines.append("#SBATCH --export=NONE")
 
     # 2. Account (prioritizing resolved parameter over attributes.account)
-    resolved_account = account or (
-        job_spec.attributes.account if job_spec.attributes else None
-    )
+    resolved_account = account or (job_spec.attributes.account if job_spec.attributes else None)
     if resolved_account:
         lines.append(f"#SBATCH --account={resolved_account}")
 
@@ -434,9 +425,7 @@ async def submit_job(
         logger.warning("This process is not running as root!")
         server_owner = get_process_owner()
         if server_owner != user:
-            logger.warning(
-                "This process is not running as the same user as the slurm job!"
-            )
+            logger.warning("This process is not running as the same user as the slurm job!")
             cmd: list[str] = ["sudo", "sbatch"]
         else:
             logger.info("This process is running as the same user as the slurm job!")
@@ -775,12 +764,8 @@ def sbatch_to_job_spec(sbatch_content: str) -> compute_models.JobSpec:
         pre_launch_lines = non_env_body_lines
         post_launch_lines = []
 
-    pre_launch = (
-        "\n".join(line.strip() for line in pre_launch_lines if line.strip()) or None
-    )
-    post_launch = (
-        "\n".join(line.strip() for line in post_launch_lines if line.strip()) or None
-    )
+    pre_launch = "\n".join(line.strip() for line in pre_launch_lines if line.strip()) or None
+    post_launch = "\n".join(line.strip() for line in post_launch_lines if line.strip()) or None
 
     resources = None
     if (
@@ -948,9 +933,7 @@ async def get_job_status(
     try:
         output = await run_slurm_command(cur_cmd)
     except SlurmCommandError as slurm_e:
-        logger.info(
-            f"Debug: invalid job id in squeue command. Details: {slurm_e.stderr}"
-        )
+        logger.info(f"Debug: invalid job id in squeue command. Details: {slurm_e.stderr}")
     except Exception as e:
         logger.info(f"Failed to run squeue command. Details: {e}")
         output = ""
@@ -1092,9 +1075,7 @@ async def get_user_jobs(
             job_spec = None
             if include_spec:
                 job_spec = await get_running_job_spec(user, job_id)
-            job_list.append(
-                compute_models.Job(id=job_id, status=job_status, job_spec=job_spec)
-            )
+            job_list.append(compute_models.Job(id=job_id, status=job_status, job_spec=job_spec))
 
     # Now check whether we need to check historical data or not
     if historical and num < limit:
@@ -1132,9 +1113,7 @@ async def get_user_jobs(
                 exit_code=exit_code,
                 meta_data={"username": user, "job_id": job_id},
             )
-            job_list.append(
-                compute_models.Job(id=job_id, status=job_status, job_spec=None)
-            )
+            job_list.append(compute_models.Job(id=job_id, status=job_status, job_spec=None))
             num += 1
             if num > limit:
                 break
@@ -1450,9 +1429,7 @@ async def update_job(
 
     job_args = job_spec_to_dict(job_spec)
     if not job_args:
-        return _make_failed_job(
-            "No valid arguments found in job spec for scontrol update"
-        )
+        return _make_failed_job("No valid arguments found in job spec for scontrol update")
 
     cur_cmd: list[str] = ["squeue", "-j", job_id, "--format=%i %t %a", "-h"]
 
@@ -1461,20 +1438,14 @@ async def update_job(
     try:
         output = await run_slurm_command(cur_cmd)
     except SlurmCommandError as slurm_e:
-        logger.info(
-            f"Debug: invalid job id in squeue command. Details: {slurm_e.stderr}"
-        )
-        return _make_failed_job(
-            f"Invalid job id in squeue command. Details: {slurm_e.stderr}"
-        )
+        logger.info(f"Debug: invalid job id in squeue command. Details: {slurm_e.stderr}")
+        return _make_failed_job(f"Invalid job id in squeue command. Details: {slurm_e.stderr}")
     except Exception as e:
         logger.info(f"Failed to run squeue command. Details: {e}")
         return _make_failed_job(f"Failed to run squeue command. Details: {e}")
 
     if output == "":
-        return _make_failed_job(
-            f"Job {job_id} not found or not in active and pending state."
-        )
+        return _make_failed_job(f"Job {job_id} not found or not in active and pending state.")
 
     lines = output.strip().split("\n")
     if len(lines) != 1:

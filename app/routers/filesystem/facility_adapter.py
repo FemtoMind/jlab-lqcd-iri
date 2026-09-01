@@ -25,52 +25,113 @@ class FacilityAdapter(AuthenticatedAdapter):
 
     @abstractmethod
     async def chmod(
-        self: "FacilityAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PutFileChmodRequest
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PutFileChmodRequest,
     ) -> filesystem_models.PutFileChmodResponse:
         pass
 
     @abstractmethod
     async def chown(
-        self: "FacilityAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PutFileChownRequest
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PutFileChownRequest,
     ) -> filesystem_models.PutFileChownResponse:
         pass
 
     @abstractmethod
     async def ls(
-        self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str, show_hidden: bool, numeric_uid: bool, recursive: bool, dereference: bool
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        path: str,
+        show_hidden: bool,
+        numeric_uid: bool,
+        recursive: bool,
+        dereference: bool,
+        transfer_token: str | None = None,
     ) -> filesystem_models.GetDirectoryLsResponse:
         pass
 
     @abstractmethod
-    async def head(self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str, file_bytes: int, lines: int, skip_trailing: bool) -> filesystem_models.GetFileHeadResponse:
+    async def head(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        path: str,
+        file_bytes: int,
+        lines: int,
+        skip_trailing: bool,
+    ) -> filesystem_models.GetFileHeadResponse:
         pass
 
     @abstractmethod
-    async def tail(self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str, file_bytes: int | None, lines: int | None, skip_heading: bool) -> filesystem_models.GetFileTailResponse:
+    async def tail(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        path: str,
+        file_bytes: int | None,
+        lines: int | None,
+        skip_heading: bool,
+    ) -> filesystem_models.GetFileTailResponse:
         pass
 
     @abstractmethod
-    async def view(self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str, size: int, offset: int) -> filesystem_models.GetViewFileResponse:
+    async def view(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        path: str,
+        size: int,
+        offset: int,
+    ) -> filesystem_models.GetViewFileResponse:
         pass
 
     @abstractmethod
-    async def checksum(self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str) -> filesystem_models.GetFileChecksumResponse:
+    async def checksum(
+        self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str
+    ) -> filesystem_models.GetFileChecksumResponse:
         pass
 
     @abstractmethod
-    async def file(self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str) -> filesystem_models.GetFileTypeResponse:
+    async def file(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        path: str,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.GetFileTypeResponse:
         pass
 
     @abstractmethod
-    async def stat(self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str, dereference: bool) -> filesystem_models.GetFileStatResponse:
+    async def stat(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        path: str,
+        dereference: bool,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.GetFileStatResponse:
         pass
 
     @abstractmethod
-    async def rm(self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str) -> filesystem_models.RemoveResponse:
+    async def rm(
+        self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.RemoveResponse:
         pass
 
     @abstractmethod
-    async def mkdir(self: "FacilityAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostMakeDirRequest) -> filesystem_models.PostMkdirResponse:
+    async def mkdir(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostMakeDirRequest,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.PostMkdirResponse:
         pass
 
     @abstractmethod
@@ -83,29 +144,68 @@ class FacilityAdapter(AuthenticatedAdapter):
         pass
 
     @abstractmethod
-    async def download(self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str) -> filesystem_models.GetFileDownloadResponse:
+    async def download(
+        self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.GetFileDownloadResponse:
         pass
 
     @abstractmethod
-    async def upload(self: "FacilityAdapter", resource: status_models.Resource, user: User, path: str, content: str) -> filesystem_models.PutFileUploadResponse:
+    async def upload(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        path: str,
+        content: str,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.PutFileUploadResponse:
         pass
 
     @abstractmethod
     async def compress(
-        self: "FacilityAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostCompressRequest
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostCompressRequest,
     ) -> filesystem_models.PostCompressResponse:
         pass
 
     @abstractmethod
     async def extract(
-        self: "FacilityAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostExtractRequest
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostExtractRequest,
     ) -> filesystem_models.PostExtractResponse:
         pass
 
     @abstractmethod
-    async def mv(self: "FacilityAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostMoveRequest) -> filesystem_models.PostMoveResponse:
+    async def mv(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostMoveRequest,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.PostMoveResponse:
         pass
 
     @abstractmethod
-    async def cp(self: "FacilityAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostCopyRequest) -> filesystem_models.PostCopyResponse:
+    async def cp(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostCopyRequest,
+    ) -> filesystem_models.PostCopyResponse:
+        pass
+
+
+    @abstractmethod
+    async def transfer(
+        self: "FacilityAdapter",
+        resource: status_models.Resource,
+        user: User,
+        dest_resource: status_models.Resource,
+        request_model: filesystem_models.PostCopyRequest,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.PostCopyResponse:
         pass

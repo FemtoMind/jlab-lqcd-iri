@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 import base64
 from typing import Annotated
-from fastapi import Depends, HTTPException, status, Query, Request, File, UploadFile
+from fastapi import Depends, HTTPException, status, Query, Header, Request, File, UploadFile
 from ...types.http import forbidExtraQueryParams
 from ...types.user import User
 from .. import iri_router
@@ -23,6 +23,42 @@ router = iri_router.IriRouter(
     prefix="/filesystem",
     tags=["filesystem"],
 )
+
+
+from fastapi.security import APIKeyHeader
+
+globus_transfer_scheme = APIKeyHeader(
+    name="X-Globus-Transfer-Token",
+    auto_error=False,
+    description="Globus Transfer Token for filesystem data access",
+)
+
+
+def get_transfer_token(
+    x_globus_transfer_token: Annotated[
+        str | None,
+        Header(
+            alias="X-Globus-Transfer-Token",
+            description="Globus Transfer token required for data access permissions.",
+        ),
+    ] = None,
+    x_transfer_token: Annotated[
+        str | None,
+        Header(
+            alias="X-Transfer-Token",
+            description="Globus Transfer token fallback header.",
+        ),
+    ] = None,
+    globus_auth_header: str | None = Depends(globus_transfer_scheme),
+    transfer_token_query: Annotated[
+        str | None,
+        Query(
+            alias="transferToken",
+            description="Globus Transfer token fallback query parameter.",
+        ),
+    ] = None,
+) -> str | None:
+    return x_globus_transfer_token or x_transfer_token or globus_auth_header or transfer_token_query
 
 
 @router.get(
@@ -60,7 +96,7 @@ async def _user_resource(
     response_description="File permissions changed successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="chmod",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def put_chmod(
     resource_id: str,
@@ -90,7 +126,7 @@ async def put_chmod(
     response_description="File ownership changed successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="chown",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def put_chown(
     resource_id: str,
@@ -120,13 +156,14 @@ async def put_chown(
     response_description="Type returned successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="file",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def get_file(
     resource_id: str,
     request: Request,
     path: Annotated[str, Query(description="A file or folder path")],
     user: User = Depends(router.current_user),
+    transfer_token: str | None = Depends(get_transfer_token),
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
     return await router.task_adapter.put_task(
@@ -137,6 +174,7 @@ async def get_file(
             command="file",
             args={
                 "path": path,
+                "transfer_token": transfer_token,
             },
         ),
     )
@@ -150,7 +188,7 @@ async def get_file(
     response_description="Stat returned successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="stat",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def get_stat(
     resource_id: str,
@@ -158,6 +196,7 @@ async def get_stat(
     path: Annotated[str, Query(description="A file or folder path")],
     dereference: Annotated[bool, Query(description="Follow symbolic links")] = False,
     user: User = Depends(router.current_user),
+    transfer_token: str | None = Depends(get_transfer_token),
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
     return await router.task_adapter.put_task(
@@ -169,6 +208,7 @@ async def get_stat(
             args={
                 "path": path,
                 "dereference": dereference,
+                "transfer_token": transfer_token,
             },
         ),
     )
@@ -182,13 +222,14 @@ async def get_stat(
     response_description="Directory created successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="mkdir",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def post_mkdir(
     resource_id: str,
     request: Request,
     request_model: models.PostMakeDirRequest,
     user: User = Depends(router.current_user),
+    transfer_token: str | None = Depends(get_transfer_token),
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
     return await router.task_adapter.put_task(
@@ -199,6 +240,7 @@ async def post_mkdir(
             command="mkdir",
             args={
                 "request_model": request_model,
+                "transfer_token": transfer_token,
             },
         ),
     )
@@ -212,7 +254,7 @@ async def post_mkdir(
     response_description="Symlink created successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="symlink",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def post_symlink(
     resource_id: str,
@@ -243,15 +285,21 @@ async def post_symlink(
     include_in_schema=router.task_adapter is not None,
     responses=DEFAULT_RESPONSES,
     operation_id="ls",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def get_ls_async(
     resource_id: str,
     request: Request,
     path: Annotated[str, Query(description="The path to list")],
-    show_hidden: Annotated[bool, Query(alias="showHidden", description="Show hidden files")] = False,
-    numeric_uid: Annotated[bool, Query(alias="numericUid", description="List numeric user and group IDs")] = False,
-    recursive: Annotated[bool, Query(alias="recursive", description="Recursively list files and folders")] = False,
+    show_hidden: Annotated[
+        bool, Query(alias="showHidden", description="Show hidden files")
+    ] = False,
+    numeric_uid: Annotated[
+        bool, Query(alias="numericUid", description="List numeric user and group IDs")
+    ] = False,
+    recursive: Annotated[
+        bool, Query(alias="recursive", description="Recursively list files and folders")
+    ] = False,
     dereference: Annotated[
         bool,
         Query(
@@ -259,8 +307,8 @@ async def get_ls_async(
             description="Show information for the file the link references.",
         ),
     ] = False,
+    transfer_token: str | None = Depends(get_transfer_token),
     user: User = Depends(router.current_user),
-
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
     return await router.task_adapter.put_task(
@@ -269,7 +317,14 @@ async def get_ls_async(
         task=task_models.TaskCommand(
             router=router.get_router_name(),
             command="ls",
-            args={"path": path, "show_hidden": show_hidden, "numeric_uid": numeric_uid, "recursive": recursive, "dereference": dereference}
+            args={
+                "path": path,
+                "show_hidden": show_hidden,
+                "numeric_uid": numeric_uid,
+                "recursive": recursive,
+                "dereference": dereference,
+                "transfer_token": transfer_token,
+            },
         ),
     )
 
@@ -282,7 +337,7 @@ async def get_ls_async(
     response_description="Head operation finished successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="head",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def get_head(
     resource_id: str,
@@ -310,7 +365,9 @@ async def get_head(
         bool,
         Query(
             alias="skipTrailing",
-            description=("The output will be the whole file, without the last NUM bytes/lines of each file. NUM should be specified in the respective argument through `bytes` or `lines`."),
+            description=(
+                "The output will be the whole file, without the last NUM bytes/lines of each file. NUM should be specified in the respective argument through `bytes` or `lines`."
+            ),
         ),
     ] = False,
     user: User = Depends(router.current_user),
@@ -318,7 +375,9 @@ async def get_head(
     resource = await _user_resource(resource_id, user)
     # Enforce that exactly one of `bytes` or `lines` is specified
     if (file_bytes is None and lines is None) or (file_bytes is not None and lines is not None):
-        raise HTTPException(status_code=400, detail="Exactly one of `bytes` or `lines` must be specified.")
+        raise HTTPException(
+            status_code=400, detail="Exactly one of `bytes` or `lines` must be specified."
+        )
     return await router.task_adapter.put_task(
         user=user,
         resource=resource,
@@ -343,13 +402,20 @@ async def get_head(
     response_description="View operation finished successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="view",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def get_view(
     resource_id: str,
     request: Request,
     path: Annotated[str, Query(description="File path")],
-    size: Annotated[int, Query(description="Value, in bytes, of the size of data to be retrieved from the file.", ge=1, le=facility_adapter.OPS_SIZE_LIMIT)] = facility_adapter.OPS_SIZE_LIMIT,
+    size: Annotated[
+        int,
+        Query(
+            description="Value, in bytes, of the size of data to be retrieved from the file.",
+            ge=1,
+            le=facility_adapter.OPS_SIZE_LIMIT,
+        ),
+    ] = facility_adapter.OPS_SIZE_LIMIT,
     offset: Annotated[int, Query(description="Value in bytes of the offset.", ge=0)] = 0,
     user: User = Depends(router.current_user),
 ) -> task_models.TaskSubmitResponse:
@@ -378,7 +444,7 @@ async def get_view(
     response_description="`tail` operation finished successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="tail",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def get_tail(
     resource_id: str,
@@ -386,7 +452,9 @@ async def get_tail(
     path: Annotated[str, Query(description="File path", min_length=1)],
     file_bytes: Annotated[
         int,
-        Query(alias="bytes", description="The output will be the last NUM bytes of each file.", ge=1),
+        Query(
+            alias="bytes", description="The output will be the last NUM bytes of each file.", ge=1
+        ),
     ] = None,
     lines: Annotated[
         int,
@@ -399,16 +467,19 @@ async def get_tail(
         bool,
         Query(
             alias="skipHeading",
-            description=("The output will be the whole file, without the first NUM bytes/lines of each file. NUM should be specified in the respective argument through `bytes` or `lines`."),
+            description=(
+                "The output will be the whole file, without the first NUM bytes/lines of each file. NUM should be specified in the respective argument through `bytes` or `lines`."
+            ),
         ),
     ] = False,
     user: User = Depends(router.current_user),
-
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
     # Enforce that exactly one of `bytes` or `lines` is specified
     if (file_bytes is None and lines is None) or (file_bytes is not None and lines is not None):
-        raise HTTPException(status_code=400, detail="Exactly one of `bytes` or `lines` must be specified.")
+        raise HTTPException(
+            status_code=400, detail="Exactly one of `bytes` or `lines` must be specified."
+        )
     return await router.task_adapter.put_task(
         user=user,
         resource=resource,
@@ -433,7 +504,7 @@ async def get_tail(
     response_description="Checksum returned successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="checksum",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def get_checksum(
     resource_id: str,
@@ -461,13 +532,14 @@ async def get_checksum(
     response_description="File or directory deleted successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="rm",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def delete_rm(
     resource_id: str,
     request: Request,
     path: Annotated[str, Query(description="The path to delete")],
     user: User = Depends(router.current_user),
+    transfer_token: str | None = Depends(get_transfer_token),
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
     return await router.task_adapter.put_task(
@@ -478,6 +550,7 @@ async def delete_rm(
             command="rm",
             args={
                 "path": path,
+                "transfer_token": transfer_token,
             },
         ),
     )
@@ -491,7 +564,7 @@ async def delete_rm(
     response_description="File and/or directories compressed successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="compress",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def post_compress(
     resource_id: str,
@@ -521,7 +594,7 @@ async def post_compress(
     response_description="File extracted successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="extract",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def post_extract(
     resource_id: str,
@@ -551,13 +624,14 @@ async def post_extract(
     response_description="Move file or directory operation created successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="mv",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def move_mv(
     resource_id: str,
     request: Request,
     request_model: models.PostMoveRequest,
     user: User = Depends(router.current_user),
+    transfer_token: str | None = Depends(get_transfer_token),
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
     return await router.task_adapter.put_task(
@@ -568,6 +642,7 @@ async def move_mv(
             command="mv",
             args={
                 "request_model": request_model,
+                "transfer_token": transfer_token,
             },
         ),
     )
@@ -581,7 +656,7 @@ async def move_mv(
     response_description="Copy file or directory operation created successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="cp",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def post_cp(
     resource_id: str,
@@ -602,6 +677,42 @@ async def post_cp(
         ),
     )
 
+@router.post(
+    "/transfer/source/{source_resource_id:str}/dest/{dest_resource_id:str}",
+    description="Transfer file/directory from source resource to destination resource using Globus",
+    status_code=status.HTTP_201_CREATED,
+    response_model=task_models.TaskSubmitResponse,
+    response_description="Transfer file or directory operation created successfully",
+    responses=DEFAULT_RESPONSES,
+    operation_id="transfer",
+    openapi_extra=iri_meta_dict("production", "required"),
+)
+async def post_transfer(
+    source_resource_id: str,
+    dest_resource_id: str,
+    request: Request,
+    request_model: models.PostCopyRequest,
+    user: User = Depends(router.current_user),
+    transfer_token: str | None = Depends(get_transfer_token),
+) -> task_models.TaskSubmitResponse:
+    source_resource = await _user_resource(source_resource_id, user)
+    dest_resource = await _user_resource(dest_resource_id, user)
+    dest_resource_dict = dest_resource.model_dump()
+    dest_resource_dict["site_id"] = dest_resource.site_id
+    return await router.task_adapter.put_task(
+        user=user,
+        resource=source_resource,
+        task=task_models.TaskCommand(
+            router=router.get_router_name(),
+            command="transfer",
+            args={
+                "dest_resource": dest_resource_dict,
+                "request_model": request_model,
+                "transfer_token": transfer_token,
+            },
+        ),
+    )
+
 
 @router.get(
     "/download/{resource_id:str}",
@@ -611,13 +722,14 @@ async def post_cp(
     response_description="File downloaded successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="download",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def get_download(
     resource_id: str,
     request: Request,
     path: Annotated[str, Query(description="A file to download")],
     user: User = Depends(router.current_user),
+    transfer_token: str | None = Depends(get_transfer_token),
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
     return await router.task_adapter.put_task(
@@ -628,6 +740,7 @@ async def get_download(
             command="download",
             args={
                 "path": path,
+                "transfer_token": transfer_token,
             },
         ),
     )
@@ -641,7 +754,7 @@ async def get_download(
     response_description="File uploaded successfully",
     responses=DEFAULT_RESPONSES,
     operation_id="upload",
-    openapi_extra=iri_meta_dict("production", "required")
+    openapi_extra=iri_meta_dict("production", "required"),
 )
 async def post_upload(
     resource_id: str,
@@ -649,6 +762,7 @@ async def post_upload(
     path: Annotated[str, Query(description="Specify path where file should be uploaded.")],
     file: UploadFile = File(description="File to be uploaded as `multipart/form-data`"),
     user: User = Depends(router.current_user),
+    transfer_token: str | None = Depends(get_transfer_token),
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
     raw_content = file.file.read()
@@ -668,6 +782,7 @@ async def post_upload(
             args={
                 "path": path,
                 "content": base64.b64encode(raw_content).decode("utf-8"),
+                "transfer_token": transfer_token,
             },
         ),
     )
