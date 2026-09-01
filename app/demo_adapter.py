@@ -173,10 +173,26 @@ class DemoAdapter(
 
         day_ago = utc_now() - datetime.timedelta(days=1)
         self.capabilities = {
-            "cpu": Capability(id=demo_uuid("capability", "cpu"), name="CPU Nodes", units=[AllocationUnit.node_hours]),
-            "gpu": Capability(id=demo_uuid("capability", "gpu"), name="GPU Nodes", units=[AllocationUnit.node_hours]),
-            "hpss": Capability(id=demo_uuid("capability", "hpss"), name="Tape Storage", units=[AllocationUnit.bytes, AllocationUnit.inodes]),
-            "gpfs": Capability(id=demo_uuid("capability", "gpfs"), name="GPFS Storage", units=[AllocationUnit.bytes, AllocationUnit.inodes]),
+            "cpu": Capability(
+                id=demo_uuid("capability", "cpu"),
+                name="CPU Nodes",
+                units=[AllocationUnit.node_hours],
+            ),
+            "gpu": Capability(
+                id=demo_uuid("capability", "gpu"),
+                name="GPU Nodes",
+                units=[AllocationUnit.node_hours],
+            ),
+            "hpss": Capability(
+                id=demo_uuid("capability", "hpss"),
+                name="Tape Storage",
+                units=[AllocationUnit.bytes, AllocationUnit.inodes],
+            ),
+            "gpfs": Capability(
+                id=demo_uuid("capability", "gpfs"),
+                name="GPFS Storage",
+                units=[AllocationUnit.bytes, AllocationUnit.inodes],
+            ),
         }
 
         pm = status_models.Resource(
@@ -449,7 +465,12 @@ class DemoAdapter(
                         project_id=pa.project_id,
                         project_allocation_id=pa.id,
                         user_id="gtorok",
-                        entries=[account_models.AllocationEntry(allocation=a.allocation / 10, usage=a.usage / 10, unit=a.unit) for a in pa.entries],
+                        entries=[
+                            account_models.AllocationEntry(
+                                allocation=a.allocation / 10, usage=a.usage / 10, unit=a.unit
+                            )
+                            for a in pa.entries
+                        ],
                     )
                 )
 
@@ -509,11 +530,18 @@ class DemoAdapter(
     # Facility API
     # ----------------------------
 
-    async def get_facility(self: "DemoAdapter", modified_since: str | None = None) -> facility_models.Facility:
+    async def get_facility(
+        self: "DemoAdapter", modified_since: str | None = None
+    ) -> facility_models.Facility:
         return self.facility
 
     async def list_sites(
-        self: "DemoAdapter", modified_since: str | None = None, name: str | None = None, offset: int | None = None, limit: int | None = None, short_name: str | None = None
+        self: "DemoAdapter",
+        modified_since: str | None = None,
+        name: str | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
+        short_name: str | None = None,
     ) -> list[facility_models.Site]:
         sites = self.sites
 
@@ -531,7 +559,9 @@ class DemoAdapter(
         l = limit or len(sites)
         return sites[o : o + l]
 
-    async def get_site(self: "DemoAdapter", site_id: str, modified_since: str | None = None) -> facility_models.Site:
+    async def get_site(
+        self: "DemoAdapter", site_id: str, modified_since: str | None = None
+    ) -> facility_models.Site:
         site = next((s for s in self.sites if s.id == site_id), None)
         if not site:
             raise HTTPException(status_code=404, detail="Site not found")
@@ -539,7 +569,9 @@ class DemoAdapter(
         if modified_since:
             ms = datetime.datetime.fromisoformat(str(modified_since))
             if site.last_modified <= ms:
-                raise HTTPException(status_code=304, headers={"Last-Modified": site.last_modified.isoformat()})
+                raise HTTPException(
+                    status_code=304, headers={"Last-Modified": site.last_modified.isoformat()}
+                )
 
         return site
 
@@ -576,7 +608,9 @@ class DemoAdapter(
     async def get_resource(self: "DemoAdapter", id_: str) -> status_models.Resource:
         return status_models.Resource.find_by_id(self.resources, id_)
 
-    async def get_resources_for_endpoint(self: "DemoAdapter", endpoint: status_models.Endpoint) -> list[status_models.Resource]:
+    async def get_resources_for_endpoint(
+        self: "DemoAdapter", endpoint: status_models.Endpoint
+    ) -> list[status_models.Resource]:
         return [r for r in self.resources if endpoint in r.supported_endpoints]
 
     async def get_events(
@@ -643,7 +677,13 @@ class DemoAdapter(
     async def get_incident(self: "DemoAdapter", id_: str) -> status_models.Incident:
         return status_models.Incident.find_by_id(self.incidents, id_)
 
-    async def get_capabilities(self: "DemoAdapter", name: str | None = None, modified_since: str | None = None, offset: int = 0, limit: int = 1000) -> list[Capability]:
+    async def get_capabilities(
+        self: "DemoAdapter",
+        name: str | None = None,
+        modified_since: str | None = None,
+        offset: int = 0,
+        limit: int = 1000,
+    ) -> list[Capability]:
         return self.capabilities.values()
 
     async def get_current_user(
@@ -700,7 +740,9 @@ class DemoAdapter(
         user: User,
         project_allocation: account_models.ProjectAllocation,
     ) -> list[account_models.UserAllocation]:
-        return [ua for ua in self.user_allocations if ua.project_allocation_id == project_allocation.id]
+        return [
+            ua for ua in self.user_allocations if ua.project_allocation_id == project_allocation.id
+        ]
 
     async def submit_job(
         self: "DemoAdapter",
@@ -808,7 +850,10 @@ class DemoAdapter(
 
     def _user_member_of(self, user: User, project_code: str) -> bool:
         """Authorization check: is the user a member of the named project?"""
-        return any(user.id in p.user_ids and self._slugify_project(p.name) == project_code for p in self.projects)
+        return any(
+            user.id in p.user_ids and self._slugify_project(p.name) == project_code
+            for p in self.projects
+        )
 
     def _resolve_path(self, template: str, user: User, project: str | None) -> str:
         first = user.id[0] if user.id else "u"
@@ -845,7 +890,9 @@ class DemoAdapter(
 
         # Authorization: a user can only resolve paths for their own projects
         if effective_project and not self._user_member_of(user, effective_project):
-            raise HTTPException(status_code=403, detail=f"User is not a member of project '{effective_project}'")
+            raise HTTPException(
+                status_code=403, detail=f"User is not a member of project '{effective_project}'"
+            )
 
         # Expand project-scoped paths across ALL of the user's projects when none specified
         project_codes = [effective_project] if effective_project else self._user_project_codes(user)
@@ -896,19 +943,29 @@ class DemoAdapter(
     # ----------------------------------------------
     # Filesystem API
     # ----------------------------------------------
-    def _run(self, args, *, shell: bool = False, timeout: int | None = 3600, text: bool = True) -> subprocess.CompletedProcess:
+    def _run(
+        self, args, *, shell: bool = False, timeout: int | None = 3600, text: bool = True
+    ) -> subprocess.CompletedProcess:
         """
         Run a subprocess command and catch exceptions.
         Raises CommandError on failure with captured diagnostics.
         """
         try:
-            return subprocess.run(args, shell=shell, capture_output=True, text=text, check=True, timeout=timeout)
+            return subprocess.run(
+                args, shell=shell, capture_output=True, text=text, check=True, timeout=timeout
+            )
         except subprocess.TimeoutExpired as exc:
             logger.warning(f"Command timed out: {args} (after {timeout} seconds)")
-            raise CommandError(cmd=args, returncode=None, stdout=exc.stdout, stderr=exc.stderr) from exc
+            raise CommandError(
+                cmd=args, returncode=None, stdout=exc.stdout, stderr=exc.stderr
+            ) from exc
         except subprocess.CalledProcessError as exc:
-            logger.warning(f"Command failed: {args} (rc={exc.returncode})\nstdout: {exc.stdout}\nstderr: {exc.stderr}")
-            raise CommandError(cmd=args, returncode=exc.returncode, stdout=exc.stdout, stderr=exc.stderr) from exc
+            logger.warning(
+                f"Command failed: {args} (rc={exc.returncode})\nstdout: {exc.stdout}\nstderr: {exc.stderr}"
+            )
+            raise CommandError(
+                cmd=args, returncode=exc.returncode, stdout=exc.stdout, stderr=exc.stderr
+            ) from exc
         except OSError as exc:
             logger.warning(f"OS error running command: {args}\nError: {exc}")
             raise CommandError(cmd=args, returncode=None, stdout=None, stderr=str(exc)) from exc
@@ -941,7 +998,9 @@ class DemoAdapter(
         permissions = stat.filemode(file_stat.st_mode)
 
         # Get last modified time
-        last_modified = datetime.datetime.fromtimestamp(file_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        last_modified = datetime.datetime.fromtimestamp(file_stat.st_mtime).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
         # Get size
         size = str(file_stat.st_size)
@@ -960,7 +1019,12 @@ class DemoAdapter(
 
         return filesystem_models.File(**data)
 
-    async def chmod(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PutFileChmodRequest) -> filesystem_models.PutFileChmodResponse:
+    async def chmod(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PutFileChmodRequest,
+    ) -> filesystem_models.PutFileChmodResponse:
         rp = self.validate_path(request_model.path)
         os.chmod(rp, int(request_model.mode, 8))
         return filesystem_models.PutFileChmodResponse(output=self._file(rp))
@@ -984,6 +1048,7 @@ class DemoAdapter(
         numeric_uid: bool,
         recursive: bool,
         dereference: bool,
+        transfer_token: str | None = None,
     ) -> filesystem_models.GetDirectoryLsResponse:
         rp = self.validate_path(path)
         files = glob.glob(rp, recursive=recursive)
@@ -1034,7 +1099,14 @@ class DemoAdapter(
         content = self._headtail("head", path, file_bytes, lines, skip_trailing=skip_trailing)
 
         fc = filesystem_models.FileContent(
-            content=content, content_type=(filesystem_models.ContentUnit.bytes if file_bytes is not None else filesystem_models.ContentUnit.lines), start_position=0, end_position=len(content)
+            content=content,
+            content_type=(
+                filesystem_models.ContentUnit.bytes
+                if file_bytes is not None
+                else filesystem_models.ContentUnit.lines
+            ),
+            start_position=0,
+            end_position=len(content),
         )
 
         return filesystem_models.GetFileHeadResponse(output=fc)
@@ -1052,20 +1124,41 @@ class DemoAdapter(
         content = self._headtail("tail", path, file_bytes, lines, skip_heading=skip_heading)
 
         fc = filesystem_models.FileContent(
-            content=content, content_type=(filesystem_models.ContentUnit.bytes if file_bytes is not None else filesystem_models.ContentUnit.lines), start_position=0, end_position=len(content)
+            content=content,
+            content_type=(
+                filesystem_models.ContentUnit.bytes
+                if file_bytes is not None
+                else filesystem_models.ContentUnit.lines
+            ),
+            start_position=0,
+            end_position=len(content),
         )
 
         return filesystem_models.GetFileTailResponse(output=fc)
 
-    async def view(self: "DemoAdapter", resource: status_models.Resource, user: User, path: str, size: int, offset: int) -> filesystem_models.GetViewFileResponse:
+    async def view(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        path: str,
+        size: int,
+        offset: int,
+    ) -> filesystem_models.GetViewFileResponse:
         rp = self.validate_path(path)
         result = self._run(f"tail -c +{offset + 1} {rp} | head -c {size}", shell=True)
         content = result.stdout
         return filesystem_models.GetViewFileResponse(
-            output=filesystem_models.FileContent(content=content, content_type=filesystem_models.ContentUnit.bytes, start_position=offset, end_position=offset + len(content)),
+            output=filesystem_models.FileContent(
+                content=content,
+                content_type=filesystem_models.ContentUnit.bytes,
+                start_position=offset,
+                end_position=offset + len(content),
+            ),
         )
 
-    async def checksum(self: "DemoAdapter", resource: status_models.Resource, user: User, path: str) -> filesystem_models.GetFileChecksumResponse:
+    async def checksum(
+        self: "DemoAdapter", resource: status_models.Resource, user: User, path: str
+    ) -> filesystem_models.GetFileChecksumResponse:
         rp = self.validate_path(path)
         result = self._run(["sha256sum", rp])
         checksum = result.stdout.split()[0]
@@ -1075,14 +1168,22 @@ class DemoAdapter(
             )
         )
 
-    async def file(self: "DemoAdapter", resource: status_models.Resource, user: User, path: str) -> filesystem_models.GetFileTypeResponse:
+    async def file(
+        self: "DemoAdapter", resource: status_models.Resource, user: User, path: str
+    ) -> filesystem_models.GetFileTypeResponse:
         rp = self.validate_path(path)
         result = self._run(["file", "-b", rp])
         return filesystem_models.GetFileTypeResponse(
             output=result.stdout.strip(),
         )
 
-    async def stat(self: "DemoAdapter", resource: status_models.Resource, user: User, path: str, dereference: bool) -> filesystem_models.GetFileStatResponse:
+    async def stat(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        path: str,
+        dereference: bool,
+    ) -> filesystem_models.GetFileStatResponse:
         rp = self.validate_path(path)
         if dereference:
             stat_info = os.stat(rp)
@@ -1115,7 +1216,12 @@ class DemoAdapter(
         self._run(["rm", "-rf", rp])
         return filesystem_models.RemoveResponse(output=f"Removed {rp}")
 
-    async def mkdir(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostMakeDirRequest) -> filesystem_models.PostMkdirResponse:
+    async def mkdir(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostMakeDirRequest,
+    ) -> filesystem_models.PostMkdirResponse:
         rp = self.validate_path(request_model.path)
         args = ["mkdir"]
         if request_model.parent:
@@ -1124,13 +1230,20 @@ class DemoAdapter(
         self._run(args)
         return filesystem_models.PostMkdirResponse(output=self._file(rp))
 
-    async def symlink(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostFileSymlinkRequest) -> filesystem_models.PostFileSymlinkResponse:
+    async def symlink(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostFileSymlinkRequest,
+    ) -> filesystem_models.PostFileSymlinkResponse:
         rp_src = self.validate_path(request_model.path)
         rp_dst = self.validate_path(request_model.link_path)
         self._run(["ln", "-s", rp_src, rp_dst])
         return filesystem_models.PostFileSymlinkResponse(output=self._file(rp_dst))
 
-    async def download(self: "DemoAdapter", resource: status_models.Resource, user: User, path: str) -> filesystem_models.GetFileDownloadResponse:
+    async def download(
+        self: "DemoAdapter", resource: status_models.Resource, user: User, path: str
+    ) -> filesystem_models.GetFileDownloadResponse:
         rp = self.validate_path(path)
         raw_content = pathlib.Path(rp).read_bytes()
 
@@ -1141,7 +1254,9 @@ class DemoAdapter(
             output=base64.b64encode(raw_content).decode("utf-8"),
         )
 
-    async def upload(self: "DemoAdapter", resource: status_models.Resource, user: User, path: str, content: str) -> filesystem_models.PutFileUploadResponse:
+    async def upload(
+        self: "DemoAdapter", resource: status_models.Resource, user: User, path: str, content: str
+    ) -> filesystem_models.PutFileUploadResponse:
         rp = self.validate_path(path)
         if isinstance(content, bytes):
             pathlib.Path(rp).write_bytes(content)
@@ -1151,7 +1266,12 @@ class DemoAdapter(
             raise Exception(f"Don't know how to handle variable of type: {type(content)}")
         return filesystem_models.PutFileUploadResponse(output=f"Uploaded to {rp}")
 
-    async def compress(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostCompressRequest) -> filesystem_models.PostCompressResponse:
+    async def compress(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostCompressRequest,
+    ) -> filesystem_models.PostCompressResponse:
         src_rp = self.validate_path(request_model.path)
         dst_rp = self.validate_path(request_model.target_path)
 
@@ -1176,7 +1296,12 @@ class DemoAdapter(
 
         return filesystem_models.PostCompressResponse(output=self._file(dst_rp))
 
-    async def extract(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostExtractRequest) -> filesystem_models.PostExtractResponse:
+    async def extract(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostExtractRequest,
+    ) -> filesystem_models.PostExtractResponse:
         src_rp = self.validate_path(request_model.path)
         dst_rp = self.validate_path(request_model.target_path)
 
@@ -1184,7 +1309,9 @@ class DemoAdapter(
             if os.path.isdir(dst_rp):
                 raise Exception(f"Target path already exists: {request_model.target_path}")
             else:
-                raise Exception(f"Target path already exists and is not a directory: {request_model.target_path}")
+                raise Exception(
+                    f"Target path already exists and is not a directory: {request_model.target_path}"
+                )
         os.makedirs(dst_rp)
 
         args = ["tar"]
@@ -1203,13 +1330,23 @@ class DemoAdapter(
 
         return filesystem_models.PostExtractResponse(output=self._file(dst_rp))
 
-    async def mv(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostMoveRequest) -> filesystem_models.PostMoveResponse:
+    async def mv(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostMoveRequest,
+    ) -> filesystem_models.PostMoveResponse:
         src_rp = self.validate_path(request_model.path)
         dst_rp = self.validate_path(request_model.target_path)
         subprocess.run(["mv", src_rp, dst_rp], check=True)
         return filesystem_models.PostMoveResponse(output=self._file(dst_rp))
 
-    async def cp(self: "DemoAdapter", resource: status_models.Resource, user: User, request_model: filesystem_models.PostCopyRequest) -> filesystem_models.PostCopyResponse:
+    async def cp(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        request_model: filesystem_models.PostCopyRequest,
+    ) -> filesystem_models.PostCopyResponse:
         src_rp = self.validate_path(request_model.path)
         dst_rp = self.validate_path(request_model.target_path)
         args = ["cp"]
@@ -1220,15 +1357,29 @@ class DemoAdapter(
         subprocess.run(args, check=True)
         return filesystem_models.PostCopyResponse(output=self._file(dst_rp))
 
+    async def transfer(
+        self: "DemoAdapter",
+        resource: status_models.Resource,
+        user: User,
+        dest_resource: status_models.Resource,
+        request_model: filesystem_models.PostCopyRequest,
+        transfer_token: str | None = None,
+    ) -> filesystem_models.PostCopyResponse:
+        return await self.cp(resource, user, request_model)
+
     async def get_task(self: "DemoAdapter", user: User, task_id: str) -> task_models.Task | None:
         await DemoTaskQueue.process_tasks(self)
-        return next((t for t in DemoTaskQueue.tasks if t.user.name == user.name and t.id == task_id), None)
+        return next(
+            (t for t in DemoTaskQueue.tasks if t.user.name == user.name and t.id == task_id), None
+        )
 
     async def get_tasks(self: "DemoAdapter", user: User) -> list[task_models.Task]:
         await DemoTaskQueue.process_tasks(self)
         return [t for t in DemoTaskQueue.tasks if t.user.name == user.name]
 
-    async def put_task(self: "DemoAdapter", user: User, resource: status_models.Resource, task: str) -> task_models.TaskSubmitResponse:
+    async def put_task(
+        self: "DemoAdapter", user: User, resource: status_models.Resource, task: str
+    ) -> task_models.TaskSubmitResponse:
         await DemoTaskQueue.process_tasks(self)
         return DemoTaskQueue.create_task(user, resource, task)
 
@@ -1264,13 +1415,22 @@ class DemoTaskQueue:
         now = utc_timestamp()
         _tasks = []
         for t in DemoTaskQueue.tasks:
-            if now - t.start > 5 * 60 and t.status in [task_models.TaskStatus.completed, task_models.TaskStatus.canceled, task_models.TaskStatus.failed]:
+            if now - t.start > 5 * 60 and t.status in [
+                task_models.TaskStatus.completed,
+                task_models.TaskStatus.canceled,
+                task_models.TaskStatus.failed,
+            ]:
                 # delete old tasks
                 continue
-            if t.status == task_models.TaskStatus.pending and now - t.start > DEMO_QUEUE_UPDATE_SECS:
+            if (
+                t.status == task_models.TaskStatus.pending
+                and now - t.start > DEMO_QUEUE_UPDATE_SECS
+            ):
                 t.status = task_models.TaskStatus.active
                 t.start = now
-            elif t.status == task_models.TaskStatus.active and now - t.start > DEMO_QUEUE_UPDATE_SECS:
+            elif (
+                t.status == task_models.TaskStatus.active and now - t.start > DEMO_QUEUE_UPDATE_SECS
+            ):
                 cmd = task_models.TaskCommand.model_validate_json(t.task)
                 (result, status) = await DemoAdapter.on_task(t.resource, t.user, cmd)
                 if isinstance(result, BaseModel):
@@ -1284,9 +1444,19 @@ class DemoTaskQueue:
         DemoTaskQueue.tasks = _tasks
 
     @staticmethod
-    def create_task(user: User, resource: status_models.Resource, command: task_models.TaskCommand) -> task_models.TaskSubmitResponse:
+    def create_task(
+        user: User, resource: status_models.Resource, command: task_models.TaskCommand
+    ) -> task_models.TaskSubmitResponse:
         """Create a new task in the queue."""
         task_id = f"task_{len(DemoTaskQueue.tasks)}"
-        DemoTaskQueue.tasks.append(DemoTask(id=task_id, task=command.model_dump_json(), user=user, resource=resource, start=utc_timestamp()))
+        DemoTaskQueue.tasks.append(
+            DemoTask(
+                id=task_id,
+                task=command.model_dump_json(),
+                user=user,
+                resource=resource,
+                start=utc_timestamp(),
+            )
+        )
         logger.info(f"Created task: {task_id}")
         return task_models.TaskSubmitResponse(task_id=task_id)
