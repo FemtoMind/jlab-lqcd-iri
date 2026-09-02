@@ -13,7 +13,7 @@ dependencies = [
     "typer>=0.24.1",
 ]
 [tool.ruff]
-line-length = 200
+line-length = 100
 exclude = [".venv", "__pycache__", "build", "dist"]
 
 [tool.pyright]
