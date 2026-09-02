@@ -51,8 +51,8 @@ dev: deps
 	IRI_LOG_ROTATION_DAYS="$${IRI_LOG_ROTATION_DAYS:-$${LOG_ROTATION_DAYS:-$(IRI_LOG_ROTATION_DAYS)}}" \
 	DEMO_QUEUE_UPDATE_SECS=2 \
 	OPENTELEMETRY_ENABLED=false \
-	GLOBUS_RS_ID=1cbc3307-9e6a-4730-a4b5-9e6d8ec37326 \
-	GLOBUS_RS_SECRET=xxxxxxxx (replace with actual secret) \
+	GLOBUS_RS_ID= \
+	GLOBUS_RS_SECRET= \
 	GLOBUS_RS_SCOPE_SUFFIX=iri_api \
 	API_URL_ROOT='http://localhost:8000' fastapi dev
 
@@ -75,10 +75,11 @@ mcp-int-dev: deps PROXY_ENV
 	IRI_API_ADAPTER_task=app.jlab_lqcd_impl.JlabLQCDImpl \
 	IRI_LOG_FILE="$${IRI_LOG_FILE:-$${LOG_FILE:-$(IRI_LOG_FILE)}}" \
 	IRI_LOG_ROTATION_DAYS="$${IRI_LOG_ROTATION_DAYS:-$${LOG_ROTATION_DAYS:-$(IRI_LOG_ROTATION_DAYS)}}" \
+	IRI_DOWNLOAD_DIR="/tmp/iri_download" \
 	DEMO_QUEUE_UPDATE_SECS=2 \
 	OPENTELEMETRY_ENABLED=false \
-	GLOBUS_RS_ID=1cbc3307-9e6a-4730-a4b5-9e6d8ec37326 \
-	GLOBUS_RS_SECRET=xxxxxxxxx (replace with actual secret) \
+	GLOBUS_RS_ID= \
+	GLOBUS_RS_SECRET= \
 	GLOBUS_RS_SCOPE_SUFFIX=iri_api \
 	API_URL_ROOT='http://localhost:8000' \
 	python3 $(PROXY_DIR)/lqcd_proxy_server.py --port 8000
@@ -90,7 +91,7 @@ clean:
 
 # Format and lint
 format: deps
-	$(BIN)/ruff format --line-length 200 .
+	$(BIN)/ruff format --line-length 100 .
 
 ruff: deps
 	$(BIN)/ruff check . --fix || true
