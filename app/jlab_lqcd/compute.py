@@ -1,6 +1,7 @@
 """Compute and job management API functions for JLab LQCD adapter."""
 
 import datetime
+from fastapi import HTTPException
 
 from ..routers.compute import models as compute_models
 from ..routers.status import models as status_models
@@ -25,6 +26,11 @@ async def submit_job(
     job_spec: compute_models.JobSpec,
 ) -> compute_models.Job:
     """Submit a job to the compute resource (Slurm)."""
+    # Check job spec directory
+    if job_spec.directory is None:
+        # run in user home directory (this directory only applies to JLab)
+        job_spec.directory = f"/home/{user.name}"
+        
     facility_project = get_iri_facility_project()
     account = facility_project or (job_spec.attributes.account if job_spec.attributes else None)
     return await slurm.submit_job(user.name, account, job_spec)
