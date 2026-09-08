@@ -845,7 +845,10 @@ async def parse_scontrol_show_job(job_id: str) -> compute_models.JobSpec | None:
     mem_str = job_data.get("MinMemoryNode") or job_data.get("MinMemoryCPU")
     if mem_str:
         memory = _parse_slurm_memory(mem_str)
-
+        if memory is not None and memory <= 0:
+            # TODO
+            memory = None
+            
     resources = None
     if (
         any(
