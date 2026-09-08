@@ -153,6 +153,17 @@ def _globus_item_to_file(
     )
 
 
+def _is_not_directory_error(exc: globus_sdk.GlobusAPIError) -> bool:
+    """Check if the Globus error was caused by calling ls on a file."""
+    code = (exc.code or "").lower()
+    message = (exc.message or "").lower()
+    return (
+        "notdirectory" in code
+        or "not a directory" in message
+        or "dirlistingfailed.notdirectory" in code
+    )
+
+
 # Recursive helper function to fetch Globus ls results and convert them to filesystem_models.File
 def _fetch_globus_ls(
     tc: globus_sdk.TransferClient,
@@ -164,31 +175,53 @@ def _fetch_globus_ls(
     rel_prefix: str = "",
 ) -> list[filesystem_models.File]:
     files = []
-    res = tc.operation_ls(endpoint_id, path=current_path, show_hidden=show_hidden)
-    for item in res:
-        file_obj = _globus_item_to_file(item, user_name, rel_prefix=rel_prefix)
-        files.append(file_obj)
+    try:
+        res = tc.operation_ls(endpoint_id, path=current_path, show_hidden=show_hidden)
+        for item in res:
+            file_obj = _globus_item_to_file(item, user_name, rel_prefix=rel_prefix)
+            files.append(file_obj)
 
-        if recursive and item.get("type") == "dir":
-            item_name = item.get("name", "")
-            sub_path = os.path.join(current_path, item_name)
-            sub_rel_prefix = (
-                os.path.join(rel_prefix, item_name) if rel_prefix else item_name
-            )
-            try:
-                sub_files = _fetch_globus_ls(
-                    tc,
-                    endpoint_id,
-                    sub_path,
-                    show_hidden,
-                    recursive,
-                    user_name,
-                    rel_prefix=sub_rel_prefix,
+            if recursive and item.get("type") == "dir":
+                item_name = item.get("name", "")
+                sub_path = os.path.join(current_path, item_name)
+                sub_rel_prefix = (
+                    os.path.join(rel_prefix, item_name) if rel_prefix else item_name
                 )
-                files.extend(sub_files)
-            except globus_sdk.exc.GlobusAPIError:
-                pass
-    return files
+                try:
+                    sub_files = _fetch_globus_ls(
+                        tc,
+                        endpoint_id,
+                        sub_path,
+                        show_hidden,
+                        recursive,
+                        user_name,
+                        rel_prefix=sub_rel_prefix,
+                    )
+                    files.extend(sub_files)
+                except globus_sdk.GlobusAPIError:
+                    pass
+        return files
+    except globus_sdk.GlobusAPIError as exc:
+        if _is_not_directory_error(exc):
+            try:
+                stat_res = tc.operation_stat(endpoint_id, path=current_path)
+                item_dict = dict(stat_res.data)
+                if not item_dict.get("name"):
+                    item_dict["name"] = os.path.basename(current_path.rstrip("/"))
+                file_obj = _globus_item_to_file(item_dict, user_name, rel_prefix=rel_prefix)
+                return [file_obj]
+            except globus_sdk.GlobusAPIError:
+                # Fallback: list the parent directory if operation_stat is unsupported on the endpoint
+                parent_dir = os.path.dirname(current_path.rstrip("/"))
+                target_name = os.path.basename(current_path.rstrip("/"))
+                try:
+                    parent_res = tc.operation_ls(endpoint_id, path=parent_dir, show_hidden=True)
+                    for item in parent_res:
+                        if item.get("name") == target_name:
+                            return [_globus_item_to_file(item, user_name, rel_prefix=rel_prefix)]
+                except globus_sdk.GlobusAPIError:
+                    pass
+        raise
 
 # Make sure the path is valid for our Jlab resource 
 def _validate_resource_path(resource: status_models.Resource, path: str) -> None:
@@ -260,7 +293,7 @@ def _get_active_globus_transfer_client(
             # Connection succeeded
             active_endpoint_id = ep_id
             break
-        except globus_sdk.exc.GlobusAPIError as exc:
+        except globus_sdk.GlobusAPIError as exc:
             # If it's a token authorization issue, fail immediately (switching endpoints won't help)
             if exc.http_status in (401, 403):
                 if exc.http_status == 401:
@@ -274,17 +307,17 @@ def _get_active_globus_transfer_client(
                         detail=f"Permission denied to access Globus endpoint {ep_id}.",
                     ) from exc
             last_exception = exc
-        except globus_sdk.exc.GlobusConnectionError as exc:
+        except globus_sdk.GlobusConnectionError as exc:
             last_exception = exc
 
     # If none of the endpoints succeeded
     if active_endpoint_id is None:
-        if isinstance(last_exception, globus_sdk.exc.GlobusConnectionError):
+        if isinstance(last_exception, globus_sdk.GlobusConnectionError):
             raise HTTPException(
                 status_code=503,
                 detail="Failed to connect to Globus services. All JLab endpoints may be down.",
             ) from last_exception
-        elif isinstance(last_exception, globus_sdk.exc.GlobusAPIError):
+        elif isinstance(last_exception, globus_sdk.GlobusAPIError):
             raise HTTPException(
                 status_code=400,
                 detail=f"Globus API error (Code: {last_exception.code}): {last_exception.message}",
@@ -324,7 +357,7 @@ async def ls(
             user_name=user.name,
         )
         return filesystem_models.GetDirectoryLsResponse(output=files)
-    except globus_sdk.exc.GlobusAPIError as exc:
+    except globus_sdk.GlobusAPIError as exc:
         if exc.http_status == 404 or exc.code in ("NotFound", "ClientError.NotFound"):
             raise HTTPException(
                 status_code=404, detail=f"Directory or file not found: {path}"
@@ -440,13 +473,18 @@ async def file(
         dereference=False,
         transfer_token=transfer_token,
     )
-    if ls_rep.output is None:
+    if ls_rep.output is None or len(ls_rep.output) == 0:
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
+    target_basename = os.path.basename(path.rstrip("/"))
     for file in ls_rep.output:
-        if file.name == path:
+        if file.name == path or file.name == target_basename:
             return filesystem_models.GetFileTypeResponse(
                 output=file.type,
             )
+    if len(ls_rep.output) == 1:
+        return filesystem_models.GetFileTypeResponse(
+            output=ls_rep.output[0].type,
+        )
     raise HTTPException(status_code=404, detail=f"File not found: {path}")
 
 
@@ -464,7 +502,7 @@ async def stat(
 
     try:
         stat_res = tc.operation_stat(active_endpoint_id, path=path)
-    except globus_sdk.exc.GlobusAPIError as exc:
+    except globus_sdk.GlobusAPIError as exc:
         if exc.http_status == 404 or exc.code in ("NotFound", "ClientError.NotFound"):
             raise HTTPException(
                 status_code=404, detail=f"File or directory not found: {path}"
@@ -560,7 +598,7 @@ async def rm(
         return filesystem_models.RemoveResponse(
             output=f"Submitted deletion request for '{path}'. Globus Task ID: {task_id}"
         )
-    except globus_sdk.exc.GlobusAPIError as exc:
+    except globus_sdk.GlobusAPIError as exc:
         if exc.http_status == 404 or exc.code in ("NotFound", "ClientError.NotFound"):
             raise HTTPException(
                 status_code=404, detail=f"File or directory not found: {path}"
@@ -600,11 +638,11 @@ async def mkdir(
                     current = os.path.join(current, part)
                     try:
                         tc.operation_mkdir(active_endpoint_id, path=current)
-                    except globus_sdk.exc.GlobusAPIError:
+                    except globus_sdk.GlobusAPIError:
                         pass
         else:
             tc.operation_mkdir(active_endpoint_id, path=dir_path)
-    except globus_sdk.exc.GlobusAPIError as exc:
+    except globus_sdk.GlobusAPIError as exc:
         if exc.http_status in (400, 409) or "Exists" in str(exc.code):
             raise HTTPException(
                 status_code=409, detail=f"Directory already exists: {dir_path}"
@@ -683,7 +721,7 @@ async def download(
         return filesystem_models.GetFileDownloadResponse(
             output=f"Downloaded '{path}' to '{local_dest_path}'. Globus Task ID: {task_id}"
         )
-    except globus_sdk.exc.GlobusAPIError as exc:
+    except globus_sdk.GlobusAPIError as exc:
         raise HTTPException(
             status_code=400,
             detail=f"Globus API error (Code: {exc.code}): {exc.message}",
@@ -749,7 +787,7 @@ async def upload(
         return filesystem_models.PutFileUploadResponse(
             output=f"Uploaded to {path}. Globus Task ID: {task_id}"
         )
-    except globus_sdk.exc.GlobusAPIError as exc:
+    except globus_sdk.GlobusAPIError as exc:
         raise HTTPException(
             status_code=400,
             detail=f"Globus API error (Code: {exc.code}): {exc.message}",
@@ -805,7 +843,7 @@ async def mv(
             oldpath=request_model.path,
             newpath=request_model.target_path,
         )
-    except globus_sdk.exc.GlobusAPIError as exc:
+    except globus_sdk.GlobusAPIError as exc:
         if exc.http_status == 404 or exc.code in ("NotFound", "ClientError.NotFound"):
             raise HTTPException(
                 status_code=404, detail=f"File or directory not found: {request_model.path}"
@@ -876,7 +914,7 @@ async def transfer(
     try:
         tc.operation_ls(source_endpoint_id, path=source_path)
         is_dir = True
-    except globus_sdk.exc.GlobusAPIError:
+    except globus_sdk.GlobusAPIError:
         is_dir = False
 
     tdata = globus_sdk.TransferData(
@@ -912,7 +950,7 @@ async def transfer(
         )
 
         return filesystem_models.PostCopyResponse(output=transferred_file)
-    except globus_sdk.exc.GlobusAPIError as exc:
+    except globus_sdk.GlobusAPIError as exc:
         raise HTTPException(
             status_code=400,
             detail=f"Globus API error (Code: {exc.code}): {exc.message}",
