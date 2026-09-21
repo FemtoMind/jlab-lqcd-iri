@@ -36,7 +36,12 @@ class SlurmCommandError(RuntimeError):
         super().__init__(f"Slurm command failed: {cmd} (rc={returncode})")
 
 
-async def run_slurm_command(cmd: list[str], timeout: float = 30.0, stdin: str | None = None) -> str:
+async def run_slurm_command(
+    cmd: list[str],
+    timeout: float = 30.0,
+    stdin: str | None = None,
+    cwd: str | None = None,
+) -> str:
     """Run an external command asynchronously and return its stdout.
 
     Raises SlurmCommandError if the command fails.
@@ -50,6 +55,7 @@ async def run_slurm_command(cmd: list[str], timeout: float = 30.0, stdin: str | 
             stdin=asyncio.subprocess.PIPE if stdin is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
         )
         try:
             stdin_bytes = stdin.encode("utf-8") if stdin is not None else None
@@ -310,6 +316,9 @@ async def submit_job(
         gid = None
         home_dir = f"/home/{user}"
 
+    # Fallback to /tmp if home_dir is not accessible on this node
+    working_dir = home_dir if os.path.isdir(home_dir) else "/tmp"
+
     if need_privilege or os.geteuid() == 0:
         cmd.extend(["--uid", user])
         if gid is not None:
@@ -320,7 +329,7 @@ async def submit_job(
     script = job_spec_to_sbatch(job_spec, account)
 
     try:
-        output = await run_slurm_command(cmd, stdin=script)
+        output = await run_slurm_command(cmd, stdin=script, cwd=working_dir)
     except SlurmCommandError as e:
         logger.error("Failed to submit slurm job: %s", e.stderr)
         return _make_failed_job(str(e.stderr))
