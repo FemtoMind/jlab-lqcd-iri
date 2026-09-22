@@ -619,8 +619,7 @@ class JlabLQCDImpl(
         if LQCD_PROXY_DIR and os.path.exists(LQCD_PROXY_DIR):
             try:
                 from lqcd_oidc_auth import (
-                    validate_authorized_token,
-                    get_local_account,
+                    validate_and_map_user_token,
                 )  # pylint: disable=import-outside-toplevel, import-error # noqa: F401
 
                 # In FastAPI headers, Bearer prefix might be passed or stripped.
@@ -629,23 +628,11 @@ class JlabLQCDImpl(
                 if token.startswith("Bearer "):
                     token = token[len("Bearer ") :].strip()
 
-                valid, user_info = validate_authorized_token(token)
-                if not valid or not user_info:
-                    raise HTTPException(status_code=401, detail="OIDC token validation failed")
-
-                user_login = (
-                    user_info.get("email")
-                    or user_info.get("preferred_username")
-                    or user_info.get("sub")
-                    or user_info.get("login")
-                    or "unknown"
-                )
-
-                local_account = get_local_account(user_login)
+                local_account = validate_and_map_user_token(token)
                 if not local_account:
                     raise HTTPException(
                         status_code=403,
-                        detail=f"Could not map user identity '{user_login}' to any local account.",
+                        detail="Could not map user identity to any local account.",
                     )
                 return local_account
             except Exception as e:
@@ -671,20 +658,23 @@ class JlabLQCDImpl(
         if LQCD_PROXY_DIR and os.path.exists(LQCD_PROXY_DIR) and globus_introspect:
             try:
                 from lqcd_oidc_auth import (
+                    map_user_info_to_account,
                     get_local_account,
                 )  # pylint: disable=import-outside-toplevel, import-error # noqa: F401
 
-                user_login = (
-                    globus_introspect.get("username")
-                    or globus_introspect.get("email")
-                    or globus_introspect.get("sub")
-                    or "unknown"
-                )
-                local_account = get_local_account(user_login)
+                local_account = map_user_info_to_account(globus_introspect)
+                if not local_account:
+                    user_login = (
+                        globus_introspect.get("username")
+                        or globus_introspect.get("email")
+                        or globus_introspect.get("sub")
+                        or "unknown"
+                    )
+                    local_account = get_local_account(user_login)
                 if not local_account:
                     raise HTTPException(
                         status_code=403,
-                        detail=f"Could not map Globus identity '{user_login}' to any local account.",
+                        detail="Could not map Globus identity to any local account.",
                     )
                 return local_account
             except Exception as e:
