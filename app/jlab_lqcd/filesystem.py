@@ -692,9 +692,10 @@ async def download(
     )
     local_endpoint_id = _get_local_endpoint_id()
 
-    local_dest_dir = PathSandbox.get_base_temp_dir()
-    os.makedirs(local_dest_dir, exist_ok=True)
-    local_dest_path = os.path.join(local_dest_dir, os.path.basename(path))
+    # directory relative to user's globus home directory
+    # the "/~/" style is globus home directory notation
+    # The directory will be created by globus if not exists
+    local_dest_path = f"/~/iri_download/{os.path.basename(path)}"
     logger.info(f"Downloading '{path}' to '{local_dest_path}'")
 
     tdata = globus_sdk.TransferData(
