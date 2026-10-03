@@ -694,8 +694,9 @@ async def download(
 
     # directory relative to user's globus home directory
     # the "/~/" style is globus home directory notation
-    # The directory will be created by globus if not exists
-    local_dest_path = f"/~/iri_download/{os.path.basename(path)}"
+    # The directory will be created by globus if not exists.
+    download_dir = os.getenv("IRI_DOWNLOAD_DIR", "iri_downloads")
+    local_dest_path = f"/~/{download_dir}/{os.path.basename(path)}"
     logger.info(f"Downloading '{path}' to '{local_dest_path}'")
 
     tdata = globus_sdk.TransferData(
