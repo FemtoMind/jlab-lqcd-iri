@@ -30,7 +30,7 @@ def get_process_owner() -> str | None:
 class PathSandbox:
     """A simple sandbox for file operations."""
 
-    _base_temp_dir: str | None = os.environ.get("IRI_DOWNLOAD_DIR")
+    _base_temp_dir = None
 
     @classmethod
     def get_base_temp_dir(cls) -> str:
