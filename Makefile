@@ -1,4 +1,4 @@
-PYTHON      := python3.12
+PYTHON      := python3.13
 VENV        := .venv
 BIN         := $(VENV)/bin
 UV          := uv
@@ -49,6 +49,7 @@ dev: deps
 	IRI_API_ADAPTER_task=app.jlab_lqcd_impl.JlabLQCDImpl \
 	IRI_LOG_FILE="$${IRI_LOG_FILE:-$${LOG_FILE:-$(IRI_LOG_FILE)}}" \
 	IRI_LOG_ROTATION_DAYS="$${IRI_LOG_ROTATION_DAYS:-$${LOG_ROTATION_DAYS:-$(IRI_LOG_ROTATION_DAYS)}}" \
+	IRI_DOWNLOAD_DIR="iri_downloads" \
 	DEMO_QUEUE_UPDATE_SECS=2 \
 	OPENTELEMETRY_ENABLED=false \
 	GLOBUS_RS_ID= \
@@ -75,13 +76,13 @@ mcp-int-dev: deps PROXY_ENV
 	IRI_API_ADAPTER_task=app.jlab_lqcd_impl.JlabLQCDImpl \
 	IRI_LOG_FILE="$${IRI_LOG_FILE:-$${LOG_FILE:-$(IRI_LOG_FILE)}}" \
 	IRI_LOG_ROTATION_DAYS="$${IRI_LOG_ROTATION_DAYS:-$${LOG_ROTATION_DAYS:-$(IRI_LOG_ROTATION_DAYS)}}" \
-	IRI_DOWNLOAD_DIR="/tmp/iri_download" \
+	IRI_DOWNLOAD_DIR="iri_downloads" \
 	DEMO_QUEUE_UPDATE_SECS=2 \
 	OPENTELEMETRY_ENABLED=false \
 	GLOBUS_RS_ID= \
 	GLOBUS_RS_SECRET= \
 	GLOBUS_RS_SCOPE_SUFFIX=iri_api \
-	API_URL_ROOT='http://localhost:8000' \
+	API_URL_ROOT='https://hpcdev02.jlab.org:8000' \
 	python3 $(PROXY_DIR)/lqcd_proxy_server.py --port 8000
 
 .PHONY: clean
