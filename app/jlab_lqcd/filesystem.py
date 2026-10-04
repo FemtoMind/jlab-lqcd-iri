@@ -33,17 +33,69 @@ GLOBUS_ENDPOINTS = {
 }
 
 
-def _get_local_endpoint_id() -> str:
+def _get_local_endpoint_id(
+    tc: globus_sdk.TransferClient | None = None,
+    user_id: str | None = None,
+) -> str:
+    # 1. Environment variable override
     local_ep_id = os.environ.get("GLOBUS_LOCAL_ENDPOINT_ID") or GLOBUS_ENDPOINTS.get("local")
-    if not local_ep_id:
+    if local_ep_id:
+        return local_ep_id
+
+    # 2. Check user account mapping if configured
+    if user_id:
         try:
-            local_ep_id = globus_sdk.LocalGlobusConnectPersonal().endpoint_id
+            from lqcd_oidc_auth import load_user_account_mapping
+
+            mapping = load_user_account_mapping()
+            val = mapping.get(user_id)
+            if isinstance(val, dict) and val.get("globus_endpoint_id"):
+                return val["globus_endpoint_id"]
         except Exception:
             pass
+
+    # 3. Auto-discover personal endpoint via Globus Transfer API using user's transfer token
+    if tc is not None:
+        try:
+            endpoints = tc.endpoint_search(filter_scope="my-endpoints")
+            gcp_endpoints = []
+            for ep in endpoints:
+                if ep.get("is_globus_connect") or ep.get("entity_type") in (
+                    "globus_connect_personal_endpoint",
+                    "endpoint",
+                ):
+                    gcp_endpoints.append(ep)
+
+            # Prefer connected / online GCP endpoint if available
+            connected_gcp = [ep for ep in gcp_endpoints if ep.get("gcp_connected") is True]
+            if connected_gcp:
+                selected_ep = connected_gcp[0]
+                logger.info(
+                    f"Auto-discovered online Globus Connect Personal endpoint: "
+                    f"'{selected_ep.get('display_name')}' ({selected_ep.get('id')})"
+                )
+                return selected_ep["id"]
+            elif gcp_endpoints:
+                selected_ep = gcp_endpoints[0]
+                logger.info(
+                    f"Auto-discovered Globus Connect Personal endpoint: "
+                    f"'{selected_ep.get('display_name')}' ({selected_ep.get('id')})"
+                )
+                return selected_ep["id"]
+        except Exception as exc:
+            logger.warning(f"Failed to auto-discover user Globus endpoint: {exc}")
+
+    # 4. Fallback to LocalGlobusConnectPersonal on local host
+    try:
+        local_ep_id = globus_sdk.LocalGlobusConnectPersonal().endpoint_id
+    except Exception:
+        pass
+
     if not local_ep_id:
         raise HTTPException(
             status_code=400,
-            detail="Local Globus endpoint ID could not be determined.",
+            detail="Local Globus endpoint ID could not be determined. "
+                   "Ensure Globus Connect Personal is running on your machine or set GLOBUS_LOCAL_ENDPOINT_ID.",
         )
     return local_ep_id
 
@@ -690,7 +742,7 @@ async def download(
     tc, active_endpoint_id = _get_active_globus_transfer_client(
         resource, path, transfer_token
     )
-    local_endpoint_id = _get_local_endpoint_id()
+    local_endpoint_id = _get_local_endpoint_id(tc=tc, user_id=user.name)
 
     # directory relative to user's globus home directory
     # the "/~/" style is globus home directory notation
@@ -744,25 +796,48 @@ async def upload(
     tc, active_endpoint_id = _get_active_globus_transfer_client(
         resource, path, transfer_token
     )
-    local_endpoint_id = _get_local_endpoint_id()
+    local_endpoint_id = _get_local_endpoint_id(tc=tc, user_id=user.name)
 
-    local_src_dir = PathSandbox.get_base_temp_dir()
-    os.makedirs(local_src_dir, exist_ok=True)
-    local_src_path = os.path.join(local_src_dir, f"upload_{os.path.basename(path)}")
+    # Determine the local source path on user's GCP endpoint
+    local_src_path = None
 
-    if isinstance(content, bytes):
-        raw_bytes = content
-    elif isinstance(content, str):
-        try:
-            raw_bytes = base64.b64decode(content)
-        except Exception:
-            raw_bytes = content.encode("utf-8")
-    else:
-        raise HTTPException(
-            status_code=400, detail=f"Unsupported content type: {type(content)}"
-        )
+    # 1. Check if content is a direct file path string on the client/laptop
+    if isinstance(content, str):
+        content_str = content.strip()
+        # If content looks like a file path
+        if (
+            content_str.startswith("/")
+            or content_str.startswith("~")
+            or content_str.startswith("./")
+        ) and "\n" not in content_str and len(content_str) < 1024:
+            local_src_path = content_str
+        else:
+            # Check if base64-decoded string is a path
+            try:
+                decoded = base64.b64decode(content_str).decode("utf-8").strip()
+                if (
+                    decoded.startswith("/")
+                    or decoded.startswith("~")
+                    or decoded.startswith("./")
+                ) and "\n" not in decoded and len(decoded) < 1024:
+                    local_src_path = decoded
+            except Exception:
+                pass
 
-    pathlib.Path(local_src_path).write_bytes(raw_bytes)
+    if not local_src_path:
+        # Default to user's local upload area if path was not explicitly passed
+        upload_dir = os.getenv("IRI_DOWNLOAD_DIR", "iri_downloads")
+        local_src_path = f"/~/{upload_dir}/{os.path.basename(path)}"
+
+    # Normalize home path syntax for Globus Connect Personal (~/ -> /~/)
+    if local_src_path.startswith("~/"):
+        local_src_path = "/~/" + local_src_path[2:]
+    elif not local_src_path.startswith("/") and not local_src_path.startswith("/~/"):
+        local_src_path = f"/~/{local_src_path}"
+
+    logger.info(
+        f"Submitting Globus upload transfer: source='{local_src_path}' on '{local_endpoint_id}' -> dest='{path}' on '{active_endpoint_id}'"
+    )
 
     tdata = globus_sdk.TransferData(
         source_endpoint=local_endpoint_id,
@@ -787,7 +862,7 @@ async def upload(
             )
 
         return filesystem_models.PutFileUploadResponse(
-            output=f"Uploaded to {path}. Globus Task ID: {task_id}"
+            output=f"Uploaded '{local_src_path}' to '{path}'. Globus Task ID: {task_id}"
         )
     except globus_sdk.GlobusAPIError as exc:
         raise HTTPException(
