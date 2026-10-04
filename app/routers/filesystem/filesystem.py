@@ -748,7 +748,7 @@ async def get_download(
 
 @router.post(
     "/upload/{resource_id:str}",
-    description=f"Upload a small file (max {facility_adapter.OPS_SIZE_LIMIT} Bytes)",
+    description="Upload a file using Globus transfer from your local endpoint path",
     status_code=status.HTTP_200_OK,
     response_model=task_models.TaskSubmitResponse,
     response_description="File uploaded successfully",
@@ -759,20 +759,12 @@ async def get_download(
 async def post_upload(
     resource_id: str,
     request: Request,
-    path: Annotated[str, Query(description="Specify path where file should be uploaded.")],
-    file: UploadFile = File(description="File to be uploaded as `multipart/form-data`"),
+    path: Annotated[str, Query(description="Destination path on JLab storage (e.g. /qcd/volatile/users/<username>/<file>)")],
+    source_path: Annotated[str, Query(description="Local source file path on your Globus endpoint (e.g. /home/<username>/path/to/file)")],
     user: User = Depends(router.current_user),
     transfer_token: str | None = Depends(get_transfer_token),
 ) -> task_models.TaskSubmitResponse:
     resource = await _user_resource(resource_id, user)
-    raw_content = file.file.read()
-
-    if len(raw_content) > facility_adapter.OPS_SIZE_LIMIT:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File to upload is too large.",
-        )
-
     return await router.task_adapter.put_task(
         user=user,
         resource=resource,
@@ -781,7 +773,7 @@ async def post_upload(
             command="upload",
             args={
                 "path": path,
-                "content": base64.b64encode(raw_content).decode("utf-8"),
+                "content": source_path,
                 "transfer_token": transfer_token,
             },
         ),
