@@ -98,9 +98,9 @@ class IriRouter(APIRouter):
         if exp and time.time() >= exp:
             raise Exception("Token has expired")
 
-        # Check nbf (not before) claim
+        # Check nbf (not before) claim (allow 60s leeway for clock skew)
         nbf = introspect.get("nbf")
-        if nbf and time.time() < nbf:
+        if nbf and (time.time() + 60) < nbf:
             raise Exception("Token not yet valid")
 
         # Check if token has the required IRI scope
